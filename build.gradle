@@ -1,0 +1,25 @@
+group 'io.vertx'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'java'
+apply plugin: 'idea'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    junitVersion = "4.12"
+    vertxVersion = "3.5.1"
+    logbackVersion = "1.2.3"
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: junitVersion
+
+    compile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
+    compile group: 'io.vertx', name: 'vertx-core', version: vertxVersion
+    compile group: 'io.vertx', name: 'vertx-rx-java2', version: vertxVersion
+}
