@@ -1,7 +1,7 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
 
 import java.io.IOException;
 import java.net.DatagramSocket;

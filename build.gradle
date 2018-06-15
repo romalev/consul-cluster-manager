@@ -21,7 +21,8 @@ dependencies {
 
     compile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
     compile group: 'io.vertx', name: 'vertx-core', version: vertxVersion
-    compile group: 'io.vertx', name: 'vertx-rx-java2', version: vertxVersion
-    compile group: 'io.vertx', name: 'vertx-web-client', version: vertxVersion
     compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxVersion
+
+    // this is only for testing purposes.
+    compile group: 'io.vertx', name: 'vertx-web', version: vertxVersion
 }
