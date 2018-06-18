@@ -1,7 +1,6 @@
 package io.vertx.spi.cluster.consul;
 
 import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
@@ -12,9 +11,14 @@ import io.vertx.core.shareddata.Lock;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.core.spi.cluster.NodeListener;
-import io.vertx.ext.consul.*;
+import io.vertx.ext.consul.ConsulClient;
+import io.vertx.ext.consul.ConsulClientOptions;
+import io.vertx.ext.consul.ServiceOptions;
+import io.vertx.ext.consul.Watch;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -33,15 +37,12 @@ public class ConsulClusterManager implements ClusterManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
     private static final String COMMON_NODE_TAG = "Vertx-Consul-Man";
-
+    private final String nodeId;
     private Vertx vertx;
     private ConsulClient consulClient;
-
     private ServiceOptions serviceOptions;
     private ConsulClientOptions consulClientOptions;
-
     private volatile boolean active;
-    private final String nodeId;
     private NodeListener nodeListener;
 
     public ConsulClusterManager(ServiceOptions serviceOptions) {
@@ -118,7 +119,7 @@ public class ConsulClusterManager implements ClusterManager {
     public List<String> getNodes() {
         // so far we actually grab a list of registered services within entire datacenter.
         log.trace("Getting all the nodes -> i.e. all registered service within entire consul dc...");
-        Future<List<String>> future = Future.future();
+        CompletableFuture<List<String>> future = new CompletableFuture<>();
         consulClient.catalogServices(result -> {
             if (result.succeeded()) {
                 List<String> nodeIds = result.result().getList().stream()
@@ -129,10 +130,17 @@ public class ConsulClusterManager implements ClusterManager {
                 future.complete(nodeIds);
             } else {
                 log.error("Couldn't catalog available services due to: '{}'", result.cause().getMessage());
-                future.fail(result.cause());
+                future.completeExceptionally(result.cause());
             }
         });
-        return future.result();
+
+        List<String> result = null;
+        try {
+            result = future.get(2, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("Error has occurred while getting all the nodes in dc. Details: '{}'", e.getMessage());
+        }
+        return result;
     }
 
     @Override
@@ -166,7 +174,6 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("'{}' is trying to leave the cluster.", serviceOptions.getId());
         if (active) {
             active = false;
-            nodeListener.nodeLeft(nodeId);
             consulClient.deregisterService(serviceOptions.getId(), resultHandler);
         } else {
             log.warn("'{}' is NOT active.", serviceOptions.getId());
@@ -178,18 +185,39 @@ public class ConsulClusterManager implements ClusterManager {
         return active;
     }
 
+    // tricky !!! watchers are always executed  within the event loop context !!!
+    // nodeAdded() call MUST NEVER BE EXECUTED within event loop context !!!.
     private void registerWatcher() {
-        log.trace("Watch registration.");
-        Watch.services(vertx).setHandler(watcher -> {
-            if (watcher.succeeded()) {
-                watcher.nextResult().getList().stream().filter(service -> service.getTags().contains(COMMON_NODE_TAG)).forEach(service -> {
-                    log.trace("Watcher for service: '{}' has been registered.", nodeId);
+        vertx.executeBlocking(event ->
+                Watch.services(vertx).setHandler(watcher -> {
+                    if (watcher.succeeded()) {
+                        log.trace("Watcher for service: '{}' has been registered.", nodeId);
+                        watcher.nextResult().getList().stream().filter(service -> service.getTags().contains(COMMON_NODE_TAG))
+                                .forEach(service -> {
+                                    if (getNodeIdOutOfServiceName(service.getName()).equals(nodeId)) {
+                                        event.complete();
+                                    }
+                                });
+                    } else {
+                        log.warn("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, watcher.cause().getMessage());
+                        event.fail(watcher.cause());
+                    }
+                }).start(), res -> {
+            if (res.succeeded()) {
+                // always adding nodeId to node listener not within eventloop thread.
+                vertx.executeBlocking(event -> {
+                    log.trace("Adding node: '{}' to nodeListener.", nodeId);
                     nodeListener.nodeAdded(nodeId);
+                    event.complete();
+                }, resOfAdding -> {
+                    if (resOfAdding.succeeded()) {
+                        log.trace("NodeId: '{}' added to nodeListener.", nodeId);
+                    } else {
+                        log.error("Can't add nodeId: '{}'. to nodeListener. Details: '{}'", nodeId, resOfAdding.cause().getMessage());
+                    }
                 });
-            } else {
-                log.warn("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, watcher.cause().getMessage());
             }
-        }).start();
+        });
     }
 
     private void addTag(ServiceOptions options, String tagToBeAdded) {

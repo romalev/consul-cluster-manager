@@ -3,9 +3,7 @@ package io.vertx.spi.cluster.consul.examples;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.ext.consul.ServiceList;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
