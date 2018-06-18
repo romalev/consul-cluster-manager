@@ -18,16 +18,16 @@ import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.UUID;
+import java.util.Arrays;
 
 public class ServiceA {
 
+    // slf4j
     static {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
 
     private static final Logger log = LoggerFactory.getLogger(ServiceA.class);
-
     private static Vertx vertx;
 
     public static void main(String[] args) throws UnknownHostException {
@@ -40,6 +40,7 @@ public class ServiceA {
         serviceOptions.setAddress(InetAddress.getLocalHost().getHostAddress());
         serviceOptions.setPort(port);
         serviceOptions.setName("Service A");
+        serviceOptions.setTags(Arrays.asList("test", "no-produ"));
         // no need to set node id since it's being generated within cluster manager.
         // serviceOptions.setId(UUID.randomUUID().toString());
 
