@@ -1,5 +1,7 @@
 package io.vertx.spi.cluster.consul;
 
+import io.reactivex.Observable;
+import io.reactivex.schedulers.Schedulers;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -11,15 +13,13 @@ import io.vertx.core.shareddata.Lock;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.core.spi.cluster.NodeListener;
-import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.ServiceOptions;
-import io.vertx.ext.consul.Watch;
+import io.vertx.reactivex.RxHelper;
+import io.vertx.reactivex.ext.consul.ConsulClient;
+import io.vertx.reactivex.ext.consul.Watch;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Cluster manager that uses Consul. See README for more details.
@@ -39,6 +39,7 @@ public class ConsulClusterManager implements ClusterManager {
     private static final String COMMON_NODE_TAG = "Vertx-Consul-Man";
     private final String nodeId;
     private Vertx vertx;
+    private io.vertx.reactivex.core.Vertx reactiveVertx;
     private ConsulClient consulClient;
     private ServiceOptions serviceOptions;
     private ConsulClientOptions consulClientOptions;
@@ -70,7 +71,8 @@ public class ConsulClusterManager implements ClusterManager {
 
     private void init() {
         log.trace("Initializing the consul client...");
-        consulClient = ConsulClient.create(vertx);
+        this.reactiveVertx = io.vertx.reactivex.core.Vertx.newInstance(vertx);
+        consulClient = ConsulClient.create(reactiveVertx);
         registerWatcher();
     }
 
@@ -119,28 +121,17 @@ public class ConsulClusterManager implements ClusterManager {
     public List<String> getNodes() {
         // so far we actually grab a list of registered services within entire datacenter.
         log.trace("Getting all the nodes -> i.e. all registered service within entire consul dc...");
-        CompletableFuture<List<String>> future = new CompletableFuture<>();
-        consulClient.catalogServices(result -> {
-            if (result.succeeded()) {
-                List<String> nodeIds = result.result().getList().stream()
-                        .filter(service -> service.getTags().contains(COMMON_NODE_TAG))
-                        .map(service -> getNodeIdOutOfServiceName(service.getName()))
-                        .collect(Collectors.toList());
-                log.trace("Service catalog -> listing ids: '{}'", nodeIds);
-                future.complete(nodeIds);
-            } else {
-                log.error("Couldn't catalog available services due to: '{}'", result.cause().getMessage());
-                future.completeExceptionally(result.cause());
-            }
-        });
-
-        List<String> result = null;
-        try {
-            result = future.get(2, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.error("Error has occurred while getting all the nodes in dc. Details: '{}'", e.getMessage());
-        }
-        return result;
+        List<String> nodeIds = consulClient.rxCatalogServices()
+                .subscribeOn(RxHelper.blockingScheduler(vertx))
+                .toObservable()
+                .flatMap(serviceList -> Observable.fromIterable(serviceList.getList()))
+                .filter(service -> service.getTags().contains(COMMON_NODE_TAG))
+                .map(service -> getNodeIdOutOfServiceName(service.getName()))
+                .doOnNext(s -> log.trace("Received: '{}' from Consul.", s))
+                .toList()
+                .doOnError(throwable -> log.error("Error occurred while getting services: '{}'", throwable.getMessage()))
+                .blockingGet();
+        return nodeIds;
     }
 
     @Override
@@ -186,38 +177,27 @@ public class ConsulClusterManager implements ClusterManager {
     }
 
     // tricky !!! watchers are always executed  within the event loop context !!!
-    // nodeAdded() call MUST NEVER BE EXECUTED within event loop context !!!.
+    // nodeAdded() call muset NEVER be called within event loop context !!!.
     private void registerWatcher() {
-        vertx.executeBlocking(event ->
-                Watch.services(vertx).setHandler(watcher -> {
-                    if (watcher.succeeded()) {
-                        log.trace("Watcher for service: '{}' has been registered.", nodeId);
-                        watcher.nextResult().getList().stream().filter(service -> service.getTags().contains(COMMON_NODE_TAG))
-                                .forEach(service -> {
-                                    if (getNodeIdOutOfServiceName(service.getName()).equals(nodeId)) {
-                                        event.complete();
-                                    }
-                                });
-                    } else {
-                        log.warn("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, watcher.cause().getMessage());
-                        event.fail(watcher.cause());
-                    }
-                }).start(), res -> {
-            if (res.succeeded()) {
-                // always adding nodeId to node listener not within eventloop thread.
-                vertx.executeBlocking(event -> {
-                    log.trace("Adding node: '{}' to nodeListener.", nodeId);
-                    nodeListener.nodeAdded(nodeId);
-                    event.complete();
-                }, resOfAdding -> {
-                    if (resOfAdding.succeeded()) {
-                        log.trace("NodeId: '{}' added to nodeListener.", nodeId);
-                    } else {
-                        log.error("Can't add nodeId: '{}'. to nodeListener. Details: '{}'", nodeId, resOfAdding.cause().getMessage());
-                    }
-                });
+        Watch.services(reactiveVertx).setHandler(event -> {
+            if (event.succeeded()) {
+                Observable.fromIterable(event.nextResult().getList())
+                        .subscribeOn(Schedulers.newThread())
+                        .filter(service -> service.getTags().contains(COMMON_NODE_TAG))
+                        .map(service -> getNodeIdOutOfServiceName(service.getName()))
+                        .filter(receivedNodeId -> !receivedNodeId.equals(nodeId))
+                        .doOnNext(newNodeId -> log.trace("New node: '{}' was added to consul", newNodeId))
+                        .subscribe(
+                                newNodeId -> {
+                                    // not an event loop context since we subscribe the observable flow on vert.x-worker-thread (RxHelper.blockingScheduler(vertx))
+                                    log.trace("Adding new nodeId: '{}' to nodeListener.", newNodeId);
+                                    nodeListener.nodeAdded(newNodeId);
+                                },
+                                throwable -> log.error("Error occurred while processing new node ids in the cluster. Details: {}", throwable.getMessage()));
+            } else {
+                log.error("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, event.cause().getMessage());
             }
-        });
+        }).start();
     }
 
     private void addTag(ServiceOptions options, String tagToBeAdded) {
