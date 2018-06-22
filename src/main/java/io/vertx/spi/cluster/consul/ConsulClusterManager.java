@@ -14,6 +14,7 @@ import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.ConsulClientOptions;
+import io.vertx.ext.consul.ServiceList;
 import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.reactivex.ext.consul.ConsulClient;
 import io.vertx.reactivex.ext.consul.Watch;
@@ -122,18 +123,19 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public List<String> getNodes() {
+        // TODO : potentially blocking code - what it gets executed within vertx even loop context ? huh ?
         // so far we actually grab a list of registered services within entire datacenter.
         log.trace("Getting all the nodes -> i.e. all registered service within entire consul dc...");
-
         List<String> nodeIds = consulClient.rxCatalogServices()
                 .toObservable()
-                .flatMap(serviceList -> Observable.fromIterable(serviceList.getList()))
+                .flatMapIterable(ServiceList::getList)
                 .filter(service -> service.getTags().contains(COMMON_NODE_TAG))
                 .map(service -> getNodeIdOutOfServiceName(service.getName()))
                 .doOnNext(s -> log.trace("Received: '{}' from Consul.", s))
                 .toList()
                 .doOnError(throwable -> log.error("Error occurred while getting services: '{}'", throwable.getMessage()))
                 .blockingGet();
+        log.trace("Node are: '{}'", nodeIds);
         return nodeIds;
     }
 
