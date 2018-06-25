@@ -12,10 +12,7 @@ import io.vertx.reactivex.ext.consul.ConsulClient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -135,7 +132,7 @@ public final class ConsulSyncMap implements Map<String, String> {
         log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
         Observable
                 .fromIterable(m.entrySet())
-                .flatMapSingle(entry -> consulClient.rxPutValue(entry.getKey(), entry.getValue()))
+                .flatMapSingle(entry -> consulClient.rxPutValue(name + "/" + entry.getKey(), entry.getValue()))
                 .subscribe();
         cache.putAll(m);
     }
@@ -177,67 +174,55 @@ public final class ConsulSyncMap implements Map<String, String> {
                 .setHandler(promise -> {
                     if (promise.succeeded()) {
                         // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache gets updated and in sync with Consul KV store.
-                        // TODO : is it correct to do so ???
+                        // TODO : is it correct to do so ? Investigate moore deeply how concurrent hash map handles concurrent writes
                         synchronized (this) {
                             log.trace("Watch for Consul KV store has been registered.");
-
+                            // TODO : more its are required to test this behaviour.
                             KeyValueList prevKvList = promise.prevResult();
                             KeyValueList nextKvList = promise.nextResult();
 
-                            // ADDITION
-                            if (Objects.isNull(prevKvList)) {
-
+                            if (Objects.isNull(prevKvList) && Objects.nonNull(nextKvList) && Objects.nonNull(nextKvList.getList())) {
+                                nextKvList.getList().forEach(keyValue -> {
+                                    String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
+                                    log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
+                                    cache.put(extractedKey, keyValue.getValue());
+                                });
+                            } else if ((Objects.isNull(nextKvList) || Objects.isNull(nextKvList.getList()))) {
+                                log.trace("Clearing all cache since Consul KV store seems to be empty.");
+                                cache.clear();
+                            } else if (Objects.nonNull(prevKvList.getList()) && Objects.nonNull(nextKvList.getList())) {
+                                if (nextKvList.getList().size() == prevKvList.getList().size()) {
+                                    nextKvList.getList().forEach(keyValue -> {
+                                        String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
+                                        log.trace("Updating the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
+                                        cache.put(extractedKey, keyValue.getValue());
+                                    });
+                                } else if (nextKvList.getList().size() > prevKvList.getList().size()) {
+                                    Set<KeyValue> nextS = new HashSet<>(nextKvList.getList());
+                                    nextS.removeAll(new HashSet<>(prevKvList.getList()));
+                                    if (!nextS.isEmpty()) {
+                                        nextS.forEach(keyValue -> {
+                                            String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
+                                            log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
+                                            cache.put(extractedKey, keyValue.getValue());
+                                        });
+                                    }
+                                } else {
+                                    Set<KeyValue> prevS = new HashSet<>(prevKvList.getList());
+                                    prevS.removeAll(new HashSet<>(nextKvList.getList()));
+                                    if (!prevS.isEmpty()) {
+                                        prevS.forEach(keyValue -> {
+                                            String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
+                                            log.trace("Removing the KV: '{}' -> '{}' from local cache.", extractedKey, keyValue.getValue());
+                                            cache.put(extractedKey, keyValue.getValue());
+                                            cache.remove(extractedKey);
+                                        });
+                                    }
+                                }
                             }
-//
-//
-//                            if (Objects.isNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) {
-//                                // handling the scenario where last element gets deleted in Consul KV store.
-//                                cache.clear();
-//                            } else if ((Objects.nonNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) &&
-//                                    (nextKvList.getList().size() > prevKvList.getList().size())) {
-//                                // ADD
-//                                Set<KeyValue> nextS = new HashSet<>(nextKvList.getList());
-//                                nextS.removeAll(new HashSet<>(prevKvList.getList()));
-//                                if (!nextS.isEmpty()) {
-//                                    nextS.forEach(keyValue -> {
-//                                        log.trace("Adding the KV: '{}' -> '{}' to local cache.", keyValue.getKey(), keyValue.getValue());
-//                                        cache.put(keyValue.getKey(), keyValue.getValue());
-//                                    });
-//                                }
-//                            } else if ((Objects.nonNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) &&
-//                                    (nextKvList.getList().size() < prevKvList.getList().size())) {
-//                                // REMOVE
-//                                Set<KeyValue> prevS = new HashSet<>(prevKvList.getList());
-//                                prevS.removeAll(new HashSet<>(nextKvList.getList()));
-//                                if (!prevS.isEmpty()) {
-//                                    prevS.forEach(keyValue -> {
-//                                        log.trace("Removing the KV: '{}' -> '{}' from local cache.", keyValue.getKey(), keyValue.getValue());
-//                                        cache.remove(keyValue.getKey());
-//                                    });
-//                                }
-//                            } else if ((Objects.nonNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) &&
-//                                    (nextKvList.getList().size() == prevKvList.getList().size())) {
-//                                // UPDATE
-//                            }
-//
-//
-//                            // TODO remove this.
-//                            if (Objects.nonNull(promise.nextResult()) && Objects.nonNull(promise.nextResult().getList())) {
-//                                Observable
-//                                        .fromIterable(promise.nextResult().getList())
-//                                        .subscribeOn(RxHelper.blockingScheduler(rxVertx.getDelegate()))
-//                                        // TODO proper filtering perhaps ???
-//                                        .doOnNext(keyValue -> {
-//                                            String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
-//                                            log.trace("Watcher: updating the internal cache by: '{}' ->  '{}'", extractedKey, keyValue.getValue());
-//                                            cache.put(extractedKey, keyValue.getValue());
-//                                        })
-//                                        .subscribe();
-//                            }
                         }
                     } else {
                         log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
-                        promise.failed();
                     }
                 })
                 .start();
