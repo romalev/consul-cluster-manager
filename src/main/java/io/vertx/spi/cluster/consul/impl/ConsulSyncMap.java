@@ -7,7 +7,6 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
-import io.vertx.reactivex.RxHelper;
 import io.vertx.reactivex.core.Vertx;
 import io.vertx.reactivex.ext.consul.ConsulClient;
 import org.jetbrains.annotations.NotNull;
@@ -61,6 +60,8 @@ public final class ConsulSyncMap implements Map<String, String> {
     }
 
     private ConsulSyncMap(Vertx rxVertx, ConsulClient consulClient) {
+        Objects.requireNonNull(rxVertx);
+        Objects.requireNonNull(consulClient);
         this.name = CLUSTER_MAP_NAME;
         this.rxVertx = rxVertx;
         this.consulClient = consulClient;
@@ -78,7 +79,7 @@ public final class ConsulSyncMap implements Map<String, String> {
                 .toObservable()
                 .filter(keyValueList -> Objects.nonNull(keyValueList.getList()))
                 .flatMapIterable(KeyValueList::getList)
-                .toMap(KeyValue::getKey, KeyValue::getValue)
+                .toMap(keyValue -> keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", ""), KeyValue::getValue)
                 .blockingGet();
         cache.putAll(consulMap);
         log.trace("Internal cache has been initialized: '{}'", Json.encodePrettily(cache));
@@ -175,23 +176,64 @@ public final class ConsulSyncMap implements Map<String, String> {
                 .keyPrefix(CLUSTER_MAP_NAME, rxVertx.getDelegate())
                 .setHandler(promise -> {
                     if (promise.succeeded()) {
-                        log.trace("Watch for Consul KV store has been registered.");
-                        // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache
-                        // gets updated and in sync with Consul KV store.
+                        // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache gets updated and in sync with Consul KV store.
                         // TODO : is it correct to do so ???
-                        if (Objects.nonNull(promise.nextResult()) && Objects.nonNull(promise.nextResult().getList())) {
-                            synchronized (this) {
-                                Observable
-                                        .fromIterable(promise.nextResult().getList())
-                                        .subscribeOn(RxHelper.blockingScheduler(rxVertx.getDelegate()))
-                                        // TODO proper filtering perhaps ???
-                                        .doOnNext(keyValue -> {
-                                            String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
-                                            log.trace("Watcher: updating the internal cache by: '{}' ->  '{}'", extractedKey, keyValue.getValue());
-                                            cache.put(extractedKey, keyValue.getValue());
-                                        })
-                                        .subscribe();
+                        synchronized (this) {
+                            log.trace("Watch for Consul KV store has been registered.");
+
+                            KeyValueList prevKvList = promise.prevResult();
+                            KeyValueList nextKvList = promise.nextResult();
+
+                            // ADDITION
+                            if (Objects.isNull(prevKvList)) {
+
                             }
+//
+//
+//                            if (Objects.isNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) {
+//                                // handling the scenario where last element gets deleted in Consul KV store.
+//                                cache.clear();
+//                            } else if ((Objects.nonNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) &&
+//                                    (nextKvList.getList().size() > prevKvList.getList().size())) {
+//                                // ADD
+//                                Set<KeyValue> nextS = new HashSet<>(nextKvList.getList());
+//                                nextS.removeAll(new HashSet<>(prevKvList.getList()));
+//                                if (!nextS.isEmpty()) {
+//                                    nextS.forEach(keyValue -> {
+//                                        log.trace("Adding the KV: '{}' -> '{}' to local cache.", keyValue.getKey(), keyValue.getValue());
+//                                        cache.put(keyValue.getKey(), keyValue.getValue());
+//                                    });
+//                                }
+//                            } else if ((Objects.nonNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) &&
+//                                    (nextKvList.getList().size() < prevKvList.getList().size())) {
+//                                // REMOVE
+//                                Set<KeyValue> prevS = new HashSet<>(prevKvList.getList());
+//                                prevS.removeAll(new HashSet<>(nextKvList.getList()));
+//                                if (!prevS.isEmpty()) {
+//                                    prevS.forEach(keyValue -> {
+//                                        log.trace("Removing the KV: '{}' -> '{}' from local cache.", keyValue.getKey(), keyValue.getValue());
+//                                        cache.remove(keyValue.getKey());
+//                                    });
+//                                }
+//                            } else if ((Objects.nonNull(nextKvList.getList()) && Objects.nonNull(prevKvList.getList())) &&
+//                                    (nextKvList.getList().size() == prevKvList.getList().size())) {
+//                                // UPDATE
+//                            }
+//
+//
+//                            // TODO remove this.
+//                            if (Objects.nonNull(promise.nextResult()) && Objects.nonNull(promise.nextResult().getList())) {
+//                                Observable
+//                                        .fromIterable(promise.nextResult().getList())
+//                                        .subscribeOn(RxHelper.blockingScheduler(rxVertx.getDelegate()))
+//                                        // TODO proper filtering perhaps ???
+//                                        .doOnNext(keyValue -> {
+//                                            String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
+//                                            log.trace("Watcher: updating the internal cache by: '{}' ->  '{}'", extractedKey, keyValue.getValue());
+//                                            cache.put(extractedKey, keyValue.getValue());
+//                                        })
+//                                        .subscribe();
+//                            }
                         }
                     } else {
                         log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
