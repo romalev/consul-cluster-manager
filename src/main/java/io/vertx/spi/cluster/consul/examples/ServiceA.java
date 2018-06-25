@@ -30,6 +30,7 @@ public class ServiceA {
     private static final Logger log = LoggerFactory.getLogger(ServiceA.class);
     private static Vertx vertx;
 
+
     public static void main(String[] args) throws UnknownHostException {
         log.info("Booting up the ServiceA...");
 
@@ -40,7 +41,7 @@ public class ServiceA {
         serviceOptions.setAddress(InetAddress.getLocalHost().getHostAddress());
         serviceOptions.setPort(port);
         serviceOptions.setName("Service A");
-        serviceOptions.setTags(Arrays.asList("test", "no-produ"));
+        serviceOptions.setTags(Arrays.asList("test", "no-production-ready"));
         // no need to set node id since it's being generated within cluster manager.
         // serviceOptions.setId(UUID.randomUUID().toString());
 
@@ -52,6 +53,7 @@ public class ServiceA {
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
+        vertxOptions.setEventLoopPoolSize(1);
         vertxOptions.setClusterManager(consulClusterManager);
 
         Vertx.clusteredVertx(vertxOptions, res -> {
@@ -94,7 +96,7 @@ public class ServiceA {
                     log.trace("ServiceAVerticle has been started.");
                     startFuture.complete();
                 } else {
-                    log.warn("ServiceAVerticle coudn't get started :(. Details: '{}'", startFuture.cause().getMessage());
+                    log.warn("ServiceAVerticle couldn't get started :(. Details: '{}'", startFuture.cause().getMessage());
                     startFuture.fail(result.cause());
                 }
             });
