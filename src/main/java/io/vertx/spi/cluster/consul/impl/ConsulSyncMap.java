@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author Roman Levytskyi
  */
-public final class ConsulSyncMap implements Map<String, String> {
+public final class ConsulSyncMap<K, V> implements Map<K, V> {
 
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
     private static final String CLUSTER_MAP_NAME = "__vertx.haInfo";
@@ -39,24 +39,9 @@ public final class ConsulSyncMap implements Map<String, String> {
     private final ConsulClient consulClient;
 
     // internal cache of consul KV store.
-    private Map<String, String> cache;
+    private Map<K, V> cache;
 
-    // thread - safe.
-    public static ConsulSyncMap getInstance(final Vertx rxVertx, final ConsulClient consulClient) {
-        ConsulSyncMap result = instance;
-        if (Objects.isNull(result)) {
-            synchronized (lock) {
-                result = instance;
-                if (Objects.isNull(result)) {
-                    instance = result = new ConsulSyncMap(rxVertx, consulClient);
-                    log.trace("Instance of '{}' has been successfully created.", ConsulSyncMap.class.getSimpleName());
-                }
-            }
-        }
-        return result;
-    }
-
-    private ConsulSyncMap(Vertx rxVertx, ConsulClient consulClient) {
+    public ConsulSyncMap(Vertx rxVertx, ConsulClient consulClient) {
         Objects.requireNonNull(rxVertx);
         Objects.requireNonNull(consulClient);
         this.name = CLUSTER_MAP_NAME;
@@ -71,13 +56,14 @@ public final class ConsulSyncMap implements Map<String, String> {
     private void initCache() {
         log.trace("Initializing ConsulSyncMap internal cache ... ");
         this.cache = new ConcurrentHashMap<>();
-        Map<String, String> consulMap = consulClient
+        Map<K, V> consulMap = consulClient
                 .rxGetValues(name)
                 .toObservable()
                 .filter(keyValueList -> Objects.nonNull(keyValueList.getList()))
                 .flatMapIterable(KeyValueList::getList)
-                .toMap(keyValue -> keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", ""), KeyValue::getValue)
+                .toMap(keyValue -> ((K) keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "")), keyValue -> ((V) keyValue.getValue()))
                 .blockingGet();
+
         cache.putAll(consulMap);
         log.trace("Internal cache has been initialized: '{}'", Json.encodePrettily(cache));
     }
@@ -105,34 +91,37 @@ public final class ConsulSyncMap implements Map<String, String> {
     }
 
     @Override
-    public String get(Object key) {
+    public V get(Object key) {
         return cache.get(key);
     }
 
     @Nullable
     @Override
-    public String put(String key, String value) {
+    public V put(K key, V value) {
         log.trace("Putting KV: '{}' -> '{}' to Consul KV store.", key, value);
         // async
-        consulClient.rxPutValue(name + "/" + key, value)
+        consulClient.rxPutValue(name + "/" + key.toString(), value.toString())
                 .subscribe(
                         res -> log.trace("KV: '{}' -> '{}' has been placed to Consul KV store.", key, value),
-                        throwable -> log.trace("Can't put KV: '{}' -> '{}' to Consul KV store. Details: '{}'", key, value, throwable.getMessage()));
+                        throwable -> log.warn("Can't put KV: '{}' -> '{}' to Consul KV store. Details: '{}'", key, value, throwable.getMessage()));
         return cache.put(key, value);
     }
 
     @Override
-    public String remove(Object key) {
-        consulClient.rxDeleteValue(name + "/" + key).subscribe();
+    public V remove(Object key) {
+        consulClient.rxDeleteValue(name + "/" + key.toString())
+                .subscribe(
+                        () -> log.trace("K: '{}' record has been deleted from Consul KV Store", key),
+                        throwable -> log.warn("Can't delete a record by K: '{}' from Consul store. Details: '{}'", key, throwable.toString()));
         return cache.remove(key);
     }
 
     @Override
-    public void putAll(@NotNull Map<? extends String, ? extends String> m) {
+    public void putAll(Map<? extends K, ? extends V> m) {
         log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
         Observable
                 .fromIterable(m.entrySet())
-                .flatMapSingle(entry -> consulClient.rxPutValue(name + "/" + entry.getKey(), entry.getValue()))
+                .flatMapSingle(entry -> consulClient.rxPutValue(name + "/" + entry.getKey().toString(), entry.getValue().toString()))
                 .subscribe();
         cache.putAll(m);
     }
@@ -148,19 +137,19 @@ public final class ConsulSyncMap implements Map<String, String> {
 
     @NotNull
     @Override
-    public Set<String> keySet() {
+    public Set<K> keySet() {
         return cache.keySet();
     }
 
     @NotNull
     @Override
-    public Collection<String> values() {
+    public Collection<V> values() {
         return cache.values();
     }
 
     @NotNull
     @Override
-    public Set<Entry<String, String>> entrySet() {
+    public Set<Entry<K, V>> entrySet() {
         return cache.entrySet();
     }
 
@@ -185,7 +174,7 @@ public final class ConsulSyncMap implements Map<String, String> {
                                 nextKvList.getList().forEach(keyValue -> {
                                     String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
                                     log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
-                                    cache.put(extractedKey, keyValue.getValue());
+                                    cache.put((K) extractedKey, (V) keyValue.getValue());
                                 });
                             } else if ((Objects.isNull(nextKvList) || Objects.isNull(nextKvList.getList()))) {
                                 log.trace("Clearing all cache since Consul KV store seems to be empty.");
@@ -195,7 +184,7 @@ public final class ConsulSyncMap implements Map<String, String> {
                                     nextKvList.getList().forEach(keyValue -> {
                                         String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
                                         log.trace("Updating the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
-                                        cache.put(extractedKey, keyValue.getValue());
+                                        cache.put((K) extractedKey, (V) keyValue.getValue());
                                     });
                                 } else if (nextKvList.getList().size() > prevKvList.getList().size()) {
                                     Set<KeyValue> nextS = new HashSet<>(nextKvList.getList());
@@ -204,7 +193,7 @@ public final class ConsulSyncMap implements Map<String, String> {
                                         nextS.forEach(keyValue -> {
                                             String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
                                             log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
-                                            cache.put(extractedKey, keyValue.getValue());
+                                            cache.put((K) extractedKey, (V) keyValue.getValue());
                                         });
                                     }
                                 } else {
@@ -214,7 +203,7 @@ public final class ConsulSyncMap implements Map<String, String> {
                                         prevS.forEach(keyValue -> {
                                             String extractedKey = keyValue.getKey().replace(CLUSTER_MAP_NAME + "/", "");
                                             log.trace("Removing the KV: '{}' -> '{}' from local cache.", extractedKey, keyValue.getValue());
-                                            cache.put(extractedKey, keyValue.getValue());
+                                            cache.put((K) extractedKey, (V) keyValue.getValue());
                                             cache.remove(extractedKey);
                                         });
                                     }

@@ -56,7 +56,7 @@ public class ConsulClusterManager implements ClusterManager {
     private final String nodeId;
     private List<String> nodes;
 
-    private ConsulSyncMap consulSyncMap;
+    private ConsulSyncMap<Object, Object> consulSyncMap;
 
     public ConsulClusterManager(ServiceOptions serviceOptions) {
         log.trace("Initializing ConsulClusterManager with serviceOptions: '{}' by using default ConsulClientOptions.", serviceOptions.toJson().encodePrettily());
@@ -106,9 +106,9 @@ public class ConsulClusterManager implements ClusterManager {
     }
 
     @Override
-    public Map<String, String> getSyncMap(String name) {
+    public <K, V> Map<K, V> getSyncMap(String name) {
         log.trace("Getting sync map by name: '{}'", name);
-        return consulSyncMap;
+        return (Map<K, V>) consulSyncMap;
     }
 
     @Override
@@ -153,7 +153,7 @@ public class ConsulClusterManager implements ClusterManager {
         vertx.executeBlocking(future -> {
             log.trace("'{}' is trying to join the cluster.", serviceOptions.getId());
             if (!active) {
-                consulSyncMap = ConsulSyncMap.getInstance(rxVertx, consulClient);
+                consulSyncMap = new ConsulSyncMap<>(rxVertx, consulClient);
                 active = true;
                 consulClient.registerService(serviceOptions, result -> {
                     if (result.succeeded()) {
