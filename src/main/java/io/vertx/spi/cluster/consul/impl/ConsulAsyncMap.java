@@ -4,14 +4,18 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.ConsulClient;
+import io.vertx.ext.consul.KeyValue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Distributed async map implementation based on consul key-value store.
@@ -44,9 +48,13 @@ public class ConsulAsyncMap<K, V> extends ConsulAsyncAbstractMap<K, V> implement
                     final String consulKey = getConsulKey(this.name, k);
                     consulClient.getValue(consulKey, resultHandler -> {
                         if (resultHandler.succeeded()) {
-                            String value = resultHandler.result().getValue();
-                            log.trace("Got an entry '{}' - '{}'", consulKey, value);
-                            future.complete((V) value);
+                            if (Objects.nonNull(resultHandler.result()) && Objects.nonNull(resultHandler.result().getValue())) {
+                                log.trace("Got an entry '{}' - '{}'", consulKey, resultHandler.result().getValue());
+                                // FIXME : this is wrong.
+                                future.complete((V) resultHandler.result().getValue());
+                            } else {
+                                future.complete();
+                            }
                         } else {
                             log.error("Failed to get an entry by K: '{}' from Consul Async KV store. Details: '{}'", k.toString(), resultHandler.cause().toString());
                             future.fail(resultHandler.cause());
@@ -84,7 +92,21 @@ public class ConsulAsyncMap<K, V> extends ConsulAsyncAbstractMap<K, V> implement
 
     @Override
     public void putIfAbsent(K k, V v, Handler<AsyncResult<V>> completionHandler) {
+        //    * Put the entry only if there is no entry with the key already present. If key already present then the existing
+        //   * value will be returned to the handler, otherwise null.
 
+        assertKeyAndValueAreNotNull(k, v)
+                .compose(aVoid -> {
+                    Future<V> future = Future.future();
+                    get(k, future);
+                    return future;
+                })
+                .compose(vV -> {
+                    Future<V> future = Future.future();
+                    // TODO : implement this.
+                    return future;
+                })
+                .setHandler(completionHandler);
     }
 
     @Override
@@ -136,5 +158,19 @@ public class ConsulAsyncMap<K, V> extends ConsulAsyncAbstractMap<K, V> implement
     @Override
     public void entries(Handler<AsyncResult<Map<K, V>>> asyncResultHandler) {
 
+    }
+
+    // helper method used to print out periodically the async consul map.
+    private void printOutAsyncMap() {
+        vertx.setPeriodic(5000, event -> {
+            consulClient.getValues(this.name, resultHandler -> {
+                if (resultHandler.succeeded()) {
+                    Map<String, String> asyncMap = resultHandler.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
+                    log.trace("Consul Async KV store: '{}' is: '{}'", this.name, Json.encodePrettily(asyncMap));
+                } else {
+                    log.error("Failed to print out async map '{}'. Details: '{}'", this.name, resultHandler.cause().toString());
+                }
+            });
+        });
     }
 }
