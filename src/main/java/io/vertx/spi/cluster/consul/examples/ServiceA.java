@@ -7,6 +7,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClientOptions;
@@ -88,6 +89,13 @@ public class ServiceA {
 
             router.route("/serviceA*").handler(BodyHandler.create());
             router.get("/serviceA").handler(event -> {
+                vertx.eventBus().send("vertx-consul", new JsonObject().put("K", "V"), replyHandler -> {
+                    if (replyHandler.succeeded()) {
+
+                    } else {
+                        log.error(replyHandler.cause().toString());
+                    }
+                });
                 event.response().setStatusCode(HttpResponseStatus.OK.code()).end("Working!");
             });
 

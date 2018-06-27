@@ -2,7 +2,7 @@
 
 **Introduction**
 -
-This is so far the proof of concept of Consul - based cluster manager that is to be pluggable into Vert.x ecosystem. **Consul** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure: https://www.consul.io/ 
+This is so far the proof of concept of Consul - based cluster manager (which is still under active development) that is to be pluggable into Vert.x ecosystem. **Consul** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure: https://www.consul.io/ 
 
 **Motivation**
 
