@@ -4,7 +4,7 @@
 -
 This is so far the proof of concept of Consul - based cluster manager (which is still under active development) that is to be pluggable into Vert.x ecosystem. **Consul** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure: https://www.consul.io/ 
 
-**Motivation**
+***Motivation***
 
 As we all know Vert.x cluster managers are pluggable and so far we have 5 cluster manager implementations: 
 
@@ -22,5 +22,9 @@ Maintaining cluster wide topic subscriber lists (so we know which nodes are inte
 - distributed counters;   
 
 Note : Cluster managers do not handle the event bus inter-node transport, this is done directly by Vert.x with TCP connections.
+
+***Implementation details***
+
+Current consul cluster manager implementation is fully based on [**vertx-consul-client**](https://vertx.io/docs/vertx-consul-client/java/) and obviously vertx.core.
 
 *Stay tuned!* 
