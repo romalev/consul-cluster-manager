@@ -11,10 +11,7 @@ import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValue;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -23,6 +20,7 @@ import java.util.stream.Collectors;
  * TODO: 1) most of logging has to be removed when consul cluster manager is more or less stable.
  * TODO: 2) everything has to be documented in javadocs.
  * TODO: 3) Marshalling and unmarshalling.
+ * TODO: 4) Some caching perhaps ???
  *
  * @author Roman Levytskyi
  */
@@ -278,21 +276,61 @@ public class ConsulAsyncMap<K, V> extends ConsulAsyncAbstractMap<K, V> implement
 
     @Override
     public void size(Handler<AsyncResult<Integer>> resultHandler) {
+        log.trace("Calculating the size of: {}", this.name);
+        Future<Integer> future = Future.future();
 
+        consulClient.getKeys(this.name, resultSizeHandler -> {
+            if (resultSizeHandler.succeeded()) {
+                log.trace("Size of: '{}' is: '{}'", this.name, resultSizeHandler.result().size());
+                future.complete(resultSizeHandler.result().size());
+            } else {
+                log.error("Error occurred while calculating the size of : '{}' due to: '{}'", this.name, resultSizeHandler.cause().toString());
+                future.fail(resultSizeHandler.cause());
+            }
+        });
+        future.setHandler(resultHandler);
     }
 
     @Override
     public void keys(Handler<AsyncResult<Set<K>>> asyncResultHandler) {
+        log.trace("Fetching all keys from: {}", this.name);
+        Future<Set<K>> future = Future.future();
 
+        consulClient.getKeys(this.name, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                log.trace("Ks: '{}' of: '{}'", resultHandler.result(), this.name);
+                // FIXME
+                future.complete(new HashSet<>((List<K>) resultHandler.result()));
+            } else {
+                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
+                future.fail(resultHandler.cause());
+            }
+        });
+        future.setHandler(asyncResultHandler);
     }
 
     @Override
     public void values(Handler<AsyncResult<List<V>>> asyncResultHandler) {
+        log.trace("Fetching all values from: {}", this.name);
+        Future<List<V>> future = Future.future();
 
+        consulClient.getValues(this.name, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                List<String> values = resultHandler.result().getList().stream().map(KeyValue::getValue).collect(Collectors.toList());
+                log.trace("Vs: '{}' of: '{}'", values, this.name);
+                future.complete((List<V>) values);
+            } else {
+                log.error("Error occurred while fetching all the values from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
+                future.fail(resultHandler.cause());
+            }
+        });
+
+        future.setHandler(asyncResultHandler);
     }
 
     @Override
     public void entries(Handler<AsyncResult<Map<K, V>>> asyncResultHandler) {
+        log.trace("Fetching all entries from: {}", this.name);
         // gets the entries of the map, asynchronously.
         Future<Map<K, V>> future = Future.future();
 
