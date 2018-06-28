@@ -18,12 +18,14 @@ import io.vertx.ext.consul.ServiceList;
 import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.reactivex.ext.consul.ConsulClient;
 import io.vertx.reactivex.ext.consul.Watch;
+import io.vertx.spi.cluster.consul.impl.ConsulAsyncMap;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMap;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -56,7 +58,9 @@ public class ConsulClusterManager implements ClusterManager {
     private final String nodeId;
     private List<String> nodes;
 
-    private ConsulSyncMap consulSyncMap;
+    private ConsulSyncMap<Object, Object> consulSyncMap;
+
+    private Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
 
     public ConsulClusterManager(ServiceOptions serviceOptions) {
         log.trace("Initializing ConsulClusterManager with serviceOptions: '{}' by using default ConsulClientOptions.", serviceOptions.toJson().encodePrettily());
@@ -103,12 +107,17 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
+        vertx.executeBlocking(event -> {
+            AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient.getDelegate()));
+            event.complete(asyncMap);
+        }, asyncResultHandler);
     }
 
     @Override
-    public Map<String, String> getSyncMap(String name) {
+    public <K, V> Map<K, V> getSyncMap(String name) {
+        // name is not being used.
         log.trace("Getting sync map by name: '{}'", name);
-        return consulSyncMap;
+        return (Map<K, V>) consulSyncMap;
     }
 
     @Override
@@ -153,7 +162,7 @@ public class ConsulClusterManager implements ClusterManager {
         vertx.executeBlocking(future -> {
             log.trace("'{}' is trying to join the cluster.", serviceOptions.getId());
             if (!active) {
-                consulSyncMap = ConsulSyncMap.getInstance(rxVertx, consulClient);
+                consulSyncMap = new ConsulSyncMap<>(rxVertx, consulClient);
                 active = true;
                 consulClient.registerService(serviceOptions, result -> {
                     if (result.succeeded()) {
