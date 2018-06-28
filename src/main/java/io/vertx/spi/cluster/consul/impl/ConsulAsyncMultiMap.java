@@ -17,6 +17,16 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+/**
+ * Distributed async multimap implementation based on consul key-value store.
+ * <p>
+ * TODO: 1) most of logging has to be removed when consul cluster manager is more or less stable.
+ * TODO: 2) everything has to be documented in javadocs.
+ * TODO: 3) Marshalling and unmarshalling.
+ * TODO: 4) Some caching perhaps ???
+ *
+ * @author Roman Levytskyi
+ */
 public class ConsulAsyncMultiMap<K, V> extends ConsulAsyncAbstractMap<K, V> implements AsyncMultiMap<K, V> {
 
     private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
@@ -28,7 +38,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAsyncAbstractMap<K, V> impl
     // TODO: consider adding a cache in cast the connection between node and consul in unstable.
     private ConcurrentMap<String, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
 
-    public ConsulAsyncMultiMap(String name, ConsulClient consulClient, Vertx vertx) {
+    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient) {
         this.name = name;
         this.consulClient = consulClient;
         this.vertx = vertx;
@@ -43,6 +53,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAsyncAbstractMap<K, V> impl
     public void get(K k, Handler<AsyncResult<ChoosableIterable<V>>> asyncResultHandler) {
         log.trace("Getting an entry by K: '{}' from Consul Async KV store.", this.name);
         assertKeyIsNotNull(k).compose(aVoid -> {
+            log.trace("Getting an entry by K: '{}' from Consul Async Multimap: '{}'.", this.name);
             Future<ChoosableIterable<V>> future = Future.future();
             consulClient.getValues(this.name, resultHandler -> {
                 if (resultHandler.succeeded()) {
@@ -51,6 +62,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAsyncAbstractMap<K, V> impl
                     ChoosableSet<V> newEntries = new ChoosableSet<>(resultMap != null ? resultMap.size() : 0);
                     future.complete(newEntries);
                 } else {
+                    log.error("Can't get an entry by K: '{}' from Consul Async Multimap.");
                     future.fail(resultHandler.cause());
                 }
             });

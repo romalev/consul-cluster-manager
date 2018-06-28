@@ -19,6 +19,7 @@ import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.reactivex.ext.consul.ConsulClient;
 import io.vertx.reactivex.ext.consul.Watch;
 import io.vertx.spi.cluster.consul.impl.ConsulAsyncMap;
+import io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMap;
 
 import java.util.ArrayList;
@@ -61,6 +62,7 @@ public class ConsulClusterManager implements ClusterManager {
     private ConsulSyncMap<Object, Object> consulSyncMap;
 
     private Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
+    private Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
 
     public ConsulClusterManager(ServiceOptions serviceOptions) {
         log.trace("Initializing ConsulClusterManager with serviceOptions: '{}' by using default ConsulClientOptions.", serviceOptions.toJson().encodePrettily());
@@ -102,11 +104,17 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async multimap by name: '{}'", name);
+        // consider getting async map within pure vertx event loop thread.
+        vertx.executeBlocking(event -> {
+            AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient.getDelegate()));
+            event.complete(asyncMultiMap);
+        }, asyncResultHandler);
     }
 
     @Override
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
+        // consider getting async map within pure vertx event loop thread.
         vertx.executeBlocking(event -> {
             AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient.getDelegate()));
             event.complete(asyncMap);
