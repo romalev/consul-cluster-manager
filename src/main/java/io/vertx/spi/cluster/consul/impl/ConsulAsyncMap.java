@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  *
  * @author Roman Levytskyi
  */
-public class ConsulAsyncMap<K, V> extends ConsulAsyncAbstractMap<K, V> implements AsyncMap<K, V> {
+public class ConsulAsyncMap<K, V> extends ConsulAbstractMap<K, V> implements AsyncMap<K, V> {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
