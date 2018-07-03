@@ -7,7 +7,6 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
-import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClientOptions;
@@ -89,9 +88,9 @@ public class ServiceA {
 
             router.route("/serviceA*").handler(BodyHandler.create());
             router.get("/serviceA").handler(event -> {
-                vertx.eventBus().send("vertx-consul", new JsonObject().put("K", "V"), replyHandler -> {
+                vertx.eventBus().send("vertx-consul", "ping", replyHandler -> {
                     if (replyHandler.succeeded()) {
-
+                        log.trace(replyHandler.result().body().toString());
                     } else {
                         log.error(replyHandler.cause().toString());
                     }

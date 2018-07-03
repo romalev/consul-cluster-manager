@@ -219,6 +219,6 @@ public final class ConsulSyncMap<K, V> implements Map<K, V> {
 
     // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.
     private void printCache() {
-        rxVertx.setPeriodic(5000, handler -> log.trace("Internal cache: '{}'", Json.encodePrettily(cache)));
+        rxVertx.setPeriodic(10000, handler -> log.trace("Internal cache: '{}'", Json.encodePrettily(cache)));
     }
 }
