@@ -15,7 +15,6 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 
-// has to be rewritten
 public class ServiceB {
 
     // slf4j
@@ -23,12 +22,12 @@ public class ServiceB {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
 
-    private static final Logger log = LoggerFactory.getLogger(ServiceA.class);
+    private static final Logger log = LoggerFactory.getLogger(ServiceB.class);
     private static Vertx vertx;
 
 
     public static void main(String[] args) throws UnknownHostException {
-        log.info("Booting up the ServiceA...");
+        log.info("Booting up the Service B...");
 
         int port = AvailablePortFinder.find(2000, 2010);
 
@@ -36,7 +35,7 @@ public class ServiceB {
         ServiceOptions serviceOptions = new ServiceOptions();
         serviceOptions.setAddress(InetAddress.getLocalHost().getHostAddress());
         serviceOptions.setPort(port);
-        serviceOptions.setName("Service A");
+        serviceOptions.setName("Service B");
         serviceOptions.setTags(Arrays.asList("test", "no-production-ready"));
         // no need to set node id since it's being generated within cluster manager.
         // serviceOptions.setId(UUID.randomUUID().toString());
@@ -57,7 +56,7 @@ public class ServiceB {
                 log.info("Clustered vertx instance has been successfully created.");
                 vertx = res.result();
 
-                ServiceBVerticle verticle = new ServiceBVerticle(port);
+                ServiceBVerticle verticle = new ServiceBVerticle();
                 log.info("Deploying ServiceBVerticle ... ");
                 vertx.deployVerticle(verticle);
             } else {
@@ -70,12 +69,6 @@ public class ServiceB {
      * Simple dedicated test verticle.
      */
     private static class ServiceBVerticle extends AbstractVerticle {
-        private final int httpPort;
-
-        ServiceBVerticle(int httpPort) {
-            this.httpPort = httpPort;
-        }
-
         @Override
         public void start(Future<Void> startFuture) throws Exception {
             vertx.eventBus().consumer("vertx-consul", event -> {
