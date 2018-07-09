@@ -1,10 +1,6 @@
 package io.vertx.spi.cluster.consul;
 
-import io.reactivex.Observable;
-import io.reactivex.schedulers.Schedulers;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
@@ -13,11 +9,10 @@ import io.vertx.core.shareddata.Lock;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.core.spi.cluster.NodeListener;
+import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.ext.consul.ServiceList;
 import io.vertx.ext.consul.ServiceOptions;
-import io.vertx.reactivex.ext.consul.ConsulClient;
-import io.vertx.reactivex.ext.consul.Watch;
+import io.vertx.ext.consul.Watch;
 import io.vertx.spi.cluster.consul.impl.ConsulAsyncMap;
 import io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap;
 import io.vertx.spi.cluster.consul.impl.ConsulClusterManagerOptions;
@@ -25,9 +20,10 @@ import io.vertx.spi.cluster.consul.impl.ConsulSyncMap;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 /**
  * Cluster manager that uses Consul. See README for more details.
@@ -45,8 +41,9 @@ public class ConsulClusterManager implements ClusterManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
 
+    private static final String HA_INFO_MAP = "__vertx.haInfo";
+
     private Vertx vertx;
-    private io.vertx.reactivex.core.Vertx rxVertx;
     private ConsulClient consulClient;
     private ServiceOptions serviceOptions;
     private ConsulClientOptions consulClientOptions;
@@ -57,10 +54,10 @@ public class ConsulClusterManager implements ClusterManager {
     private final String nodeId;
     private List<String> nodes;
 
-    private ConsulSyncMap<Object, Object> consulSyncMap;
+    private ConsulSyncMap haInfoMap;
 
-    private Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
-    private Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
+    private final Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
+    private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
 
     public ConsulClusterManager(final ConsulClusterManagerOptions options) {
         this.serviceOptions = options.getServiceOptions();
@@ -70,9 +67,9 @@ public class ConsulClusterManager implements ClusterManager {
 
     private void init() {
         log.trace("Initializing the consul client...");
-        this.rxVertx = io.vertx.reactivex.core.Vertx.newInstance(vertx);
-        consulClient = ConsulClient.create(rxVertx);
+        consulClient = ConsulClient.create(vertx);
         initNodes();
+        haInfoMap = new ConsulSyncMap(HA_INFO_MAP, vertx, consulClient);
     }
 
     @Override
@@ -87,7 +84,7 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("Getting async multimap by name: '{}'", name);
         // consider getting async map within pure vertx event loop thread.
         vertx.executeBlocking(event -> {
-            AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient.getDelegate()));
+            AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient));
             event.complete(asyncMultiMap);
         }, asyncResultHandler);
     }
@@ -105,7 +102,7 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("Getting async map by name: '{}'", name);
         // consider getting async map within pure vertx event loop thread.
         vertx.executeBlocking(event -> {
-            AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient.getDelegate()));
+            AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient));
             event.complete(asyncMap);
         }, asyncResultHandler);
     }
@@ -114,7 +111,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> Map<K, V> getSyncMap(String name) {
         // name is not being used.
         log.trace("Getting sync map by name: '{}'", name);
-        return (Map<K, V>) consulSyncMap;
+        return haInfoMap;
     }
 
     @Override
@@ -141,7 +138,6 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public void nodeListener(NodeListener listener) {
         log.trace("Initializing the node listener...");
-        // TODO:
         /*
          * 1. Whenever a node joins or leaves the cluster the registered NodeListener (if any) MUST be called with the
          * appropriate join or leave event.
@@ -156,33 +152,46 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public synchronized void join(Handler<AsyncResult<Void>> resultHandler) {
-        vertx.executeBlocking(future -> {
-            log.trace("'{}' is trying to join the cluster.", serviceOptions.getId());
-            if (!active) {
-                consulSyncMap = new ConsulSyncMap<>(rxVertx, consulClient);
-                active = true;
-                consulClient.registerService(serviceOptions, result -> {
-                    if (result.succeeded()) {
-                        future.complete();
-                    } else {
-                        future.fail(result.cause());
-                    }
-                });
-            } else {
-                log.warn("'{}' is NOT active.", serviceOptions.getId());
-            }
-        }, resultHandler);
+        Future<Void> future = Future.future();
+        log.trace("'{}' is trying to join the cluster.", nodeId);
+        if (!active) {
+            active = true;
+            consulClient.registerService(serviceOptions, result -> {
+                if (result.succeeded()) {
+                    log.trace("'{}' has joined the Consul cluster.");
+                    future.complete();
+                } else {
+                    log.error("'{}' couldn't join the Consul cluster due to: {}", nodeId, result.cause().toString());
+                    future.fail(result.cause());
+                }
+            });
+        } else {
+            log.warn("'{}' is NOT active.", serviceOptions.getId());
+            future.complete();
+        }
+        future.setHandler(resultHandler);
     }
 
     @Override
     public synchronized void leave(Handler<AsyncResult<Void>> resultHandler) {
-        log.trace("'{}' is trying to leave the cluster.", serviceOptions.getId());
+        Future<Void> resultFuture = Future.future();
+        log.trace("'{}' is trying to leave the cluster.", nodeId);
         if (active) {
             active = false;
-            consulClient.deregisterService(serviceOptions.getId(), resultHandler);
+            consulClient.deregisterService(serviceOptions.getId(), event -> {
+                if (event.succeeded()) {
+                    log.trace("'{}': has left from the Consul cluster.", nodeId);
+                    resultFuture.succeeded();
+                } else {
+                    log.error("'{}' couldn't leave the Consul cluster due to: '{}'", nodeId, event.cause().toString());
+                    resultFuture.fail(event.cause());
+                }
+            });
         } else {
             log.warn("'{}' is NOT active.", serviceOptions.getId());
+            resultFuture.complete();
         }
+        resultFuture.setHandler(resultHandler);
     }
 
     @Override
@@ -193,41 +202,54 @@ public class ConsulClusterManager implements ClusterManager {
     // tricky !!! watchers are always executed  within the event loop context !!!
     // nodeAdded() call muset NEVER be called within event loop context !!!.
     private void registerWatcher() {
-        Executor watcherThreadExecutor = Executors.newFixedThreadPool(5);
-        Watch.services(rxVertx).setHandler(event -> {
+        // Executor watcherThreadExecutor = Executors.newFixedThreadPool(5);
+        Watch.services(vertx).setHandler(event -> {
             if (event.succeeded()) {
-                Observable.fromIterable(event.nextResult().getList())
-                        .subscribeOn(Schedulers.from(watcherThreadExecutor))
-                        .filter(service -> service.getTags().contains(ConsulClusterManagerOptions.getCommonNodeTag()))
-                        .map(service -> getNodeIdOutOfServiceName(service.getName()))
-                        .filter(receivedNodeId -> !receivedNodeId.equals(nodeId))
-                        .doOnNext(newNodeId -> log.trace("New node: '{}' was added to consul", newNodeId))
-                        .subscribe(
-                                newNodeId -> {
-                                    nodes.add(newNodeId); // TODO: is this necessary.
-                                    // not an event loop context since we subscribe the observable flow on vert.x-worker-thread (RxHelper.blockingScheduler(vertx))
-                                    log.trace("Adding new nodeId: '{}' to nodeListener.", newNodeId);
-                                    nodeListener.nodeAdded(newNodeId);
-                                },
-                                throwable -> log.error("Error occurred while processing new node ids in the cluster. Details: {}", throwable.getMessage()));
+                vertx.executeBlocking(blockingEvent -> {
+                    event.nextResult().getList().stream()
+                            .filter(service -> service.getTags().contains(ConsulClusterManagerOptions.getCommonNodeTag()))
+                            .map(service -> getNodeIdOutOfServiceName(service.getName()))
+                            .filter(receivedNodeId -> !receivedNodeId.equals(nodeId))
+                            .forEach(newNodeId -> {
+                                nodes.add(newNodeId);
+                                log.trace("Adding new nodeId: '{}' to nodeListener.", newNodeId);
+                                nodeListener.nodeAdded(newNodeId);
+                            });
+                    blockingEvent.complete();
+                }, result -> {
+                });
             } else {
                 log.error("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, event.cause().getMessage());
             }
         }).start();
     }
 
+    /**
+     * note: blocking call.
+     */
     private void initNodes() {
         // so far we actually grab a list of registered services within entire datacenter.
         log.trace("Getting all the nodes -> i.e. all registered service within entire consul dc...");
-        nodes = consulClient.rxCatalogServices()
-                .toObservable()
-                .flatMapIterable(ServiceList::getList)
-                .filter(service -> service.getTags().contains(ConsulClusterManagerOptions.getCommonNodeTag()))
-                .map(service -> getNodeIdOutOfServiceName(service.getName()))
-                .doOnNext(s -> log.trace("Received: '{}' from Consul.", s))
-                .toList()
-                .doOnError(throwable -> log.error("Error occurred while getting services: '{}'", throwable.getMessage()))
-                .blockingGet();
+
+        CompletableFuture<List<String>> completableFuture = new CompletableFuture<>();
+        consulClient.catalogServices(event -> {
+            if (event.failed()) {
+                log.error("Couldn't catalog services due to: {}", event.cause().toString());
+                completableFuture.completeExceptionally(event.cause());
+            } else {
+                List<String> nodes = event.result().getList()
+                        .stream()
+                        .filter(service -> service.getTags().contains(ConsulClusterManagerOptions.getCommonNodeTag()))
+                        .map(service -> getNodeIdOutOfServiceName(service.getName()))
+                        .collect(Collectors.toList());
+                completableFuture.complete(nodes);
+            }
+        });
+        try {
+            nodes = completableFuture.get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new VertxException(e);
+        }
         log.trace("Node are: '{}'", nodes);
     }
 

@@ -43,6 +43,7 @@ public class ConsulClusterManagerOptions {
         this.nodeId = UUID.randomUUID().toString();
 
         serviceOptions.setName(enhanceServiceName(serviceOptions.getName(), nodeId));
+        serviceOptions.setId(nodeId);
         addTag(serviceOptions);
 
         this.serviceOptions = serviceOptions;
@@ -55,6 +56,7 @@ public class ConsulClusterManagerOptions {
         this.nodeId = serviceOptions.getId() == null ? UUID.randomUUID().toString() : serviceOptions.getId();
 
         serviceOptions.setName(enhanceServiceName(serviceOptions.getName(), nodeId));
+        serviceOptions.setId(nodeId);
         addTag(serviceOptions);
 
         this.serviceOptions = serviceOptions;
