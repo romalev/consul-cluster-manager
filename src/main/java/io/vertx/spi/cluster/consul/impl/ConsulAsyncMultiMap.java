@@ -1,6 +1,9 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -10,7 +13,10 @@ import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValue;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
@@ -41,7 +47,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implement
         this.name = name;
         this.consulClient = consulClient;
         this.vertx = vertx;
-        //printOutAsyncMultiMap();
+        printOutAsyncMultiMap();
     }
 
     @Override
@@ -60,13 +66,12 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implement
                     } else {
                         aSet.add(v);
                         try {
-                            String encodedValue = new String(asByte(aSet));
-                            consulClient.putValue(consulKey, encodedValue, resultHandler -> {
+                            consulClient.putValue(consulKey, encode(aSet), resultHandler -> {
                                 if (resultHandler.succeeded()) {
-                                    log.trace("KV: '{}'->'{}' has been added to Consul Async Multimap: '{}'.", consulKey, encodedValue, name);
+                                    log.trace("KV: '{}'->'{}' has been added to Consul Async Multimap: '{}'.", consulKey, v.toString(), name);
                                     future.complete();
                                 } else {
-                                    log.error("Can't add/update an entry KV: '{}'->'{}' in Consul Async Multimap: '{}' due to: '{}' ", consulKey, encodedValue, name, resultHandler.cause().toString());
+                                    log.error("Can't add/update an entry KV: '{}'->'{}' in Consul Async Multimap: '{}' due to: '{}' ", consulKey, v.toString(), name, resultHandler.cause().toString());
                                     future.fail(resultHandler.cause());
                                 }
                             });
@@ -87,13 +92,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implement
                 .compose(aSet -> {
                     Future<ChoosableIterable<V>> future = Future.future();
                     ChoosableSet<V> newEntries = new ChoosableSet<>(aSet.size());
-                    aSet.forEach(v -> {
-                        try {
-                            newEntries.add(asObject((byte[]) v));
-                        } catch (Exception e) {
-                            throw new VertxException(e);
-                        }
-                    });
+                    aSet.forEach(newEntries::add);
                     future.complete(newEntries);
                     return future;
                 })
@@ -152,8 +151,8 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implement
                 if (Objects.nonNull(resultHandler.result().getValue())) {
                     Set<V> set;
                     try {
-                        set = asObject(resultHandler.result().getValue().getBytes());
-                        log.trace("Got V: '{}' by K: '{}' from  from Consul Async Multimap: '{}'.", set, consulKey, name);
+                        set = decode(resultHandler.result().getValue());
+                        log.trace("Got V: '{}' by K: '{}' from  from Consul Async Multimap: '{}'.", set.toString(), consulKey, name);
                         futureValue.complete(set);
                     } catch (Exception e) {
                         log.error("Exception occurred: '{}'", e.getMessage());
@@ -171,40 +170,20 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implement
         return futureValue;
     }
 
+
     // helper method used to print out periodically the async consul map.
-//    private void printOutAsyncMultiMap() {
-//        vertx.setPeriodic(10000, event -> consulClient.getValues(name, futureValues -> {
-//            if (futureValues.succeeded()) {
-//                if (Objects.nonNull(futureValues.result()) && Objects.nonNull(futureValues.result().getList())) {
-//                    Map<String, String> asyncMap = futureValues.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
-//                    log.trace("Consul Async Multimap: '{}' ->  {}", name, Json.encodePrettily(asyncMap));
-//                } else {
-//                    log.trace("Consul Async Multimap: '{}' seems to be empty.", name);
-//                }
-//            } else {
-//                log.error("Failed to print out Consul Async Multimap: '{}' due to: '{}' ", name, futureValues.cause().toString());
-//            }
-//        }));
-//    }
-
-
-    // TODO : clean this up!
-    public static void main(String[] args) {
-        ConsulAsyncMultiMap asyncMultiMap = new ConsulAsyncMultiMap("fake", null, null);
-        Set<String> set = new HashSet<>();
-        set.add("1");
-        set.add("2");
-
-
-
-
-        try {
-            byte[] bytes = asyncMultiMap.asByte(set);
-            System.out.println(bytes);
-            Set resultSet = (Set) asyncMultiMap.asObject(new String(bytes).getBytes());
-            System.out.println(resultSet);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    private void printOutAsyncMultiMap() {
+        vertx.setPeriodic(10000, event -> consulClient.getValues(name, futureValues -> {
+            if (futureValues.succeeded()) {
+                if (Objects.nonNull(futureValues.result()) && Objects.nonNull(futureValues.result().getList())) {
+                    Map<String, String> asyncMap = futureValues.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
+                    log.trace("Consul Async Multimap: '{}' ->  {}", name, Json.encodePrettily(asyncMap));
+                } else {
+                    log.trace("Consul Async Multimap: '{}' seems to be empty.", name);
+                }
+            } else {
+                log.error("Failed to print out Consul Async Multimap: '{}' due to: '{}' ", name, futureValues.cause().toString());
+            }
+        }));
     }
 }

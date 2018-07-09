@@ -111,6 +111,14 @@ public class ConsulClusterManager implements ClusterManager {
         }, asyncResultHandler);
     }
 
+    /**
+     * Every eventbus handler has an ID. SubsMap (subscriber map) is a MultiMap which
+     * maps handler-IDs with server-IDs and thus allows the eventbus to determine where
+     * to send messages.
+     *
+     * @param name A unique name by which the the MultiMap can be identified within the cluster.
+     * @return subscription map
+     */
     @Override
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
