@@ -20,12 +20,11 @@ import io.vertx.reactivex.ext.consul.ConsulClient;
 import io.vertx.reactivex.ext.consul.Watch;
 import io.vertx.spi.cluster.consul.impl.ConsulAsyncMap;
 import io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap;
+import io.vertx.spi.cluster.consul.impl.ConsulClusterManagerOptions;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMap;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -45,7 +44,6 @@ import java.util.concurrent.Executors;
 public class ConsulClusterManager implements ClusterManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
-    private static final String COMMON_NODE_TAG = "vertx-consul-clustering";
 
     private Vertx vertx;
     private io.vertx.reactivex.core.Vertx rxVertx;
@@ -64,27 +62,10 @@ public class ConsulClusterManager implements ClusterManager {
     private Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
     private Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
 
-    public ConsulClusterManager(ServiceOptions serviceOptions) {
-        log.trace("Initializing ConsulClusterManager with serviceOptions: '{}' by using default ConsulClientOptions.", serviceOptions.toJson().encodePrettily());
-        this.serviceOptions = serviceOptions;
-        consulClientOptions = new ConsulClientOptions();
-        this.nodeId = UUID.randomUUID().toString();
-        serviceOptions.setId(nodeId);
-        serviceOptions.setName(buildServiceName(serviceOptions.getName(), nodeId));
-        addTag(serviceOptions);
-    }
-
-    public ConsulClusterManager(ServiceOptions serviceOptions, ConsulClientOptions clientOptions) {
-        log.trace("Initializing ConsulClusterManager with serviceOptions: '{}'. ConsulClientOptions are: '{}'.",
-                serviceOptions.toJson().encodePrettily(),
-                clientOptions.toJson().encode());
-        this.serviceOptions = serviceOptions;
-        this.consulClientOptions = clientOptions;
-        this.nodeId = UUID.randomUUID().toString();
-        serviceOptions.setId(nodeId);
-        serviceOptions.setName(buildServiceName(serviceOptions.getName(), nodeId));
-        // is it safe ??? so far just a dummy implementation.
-        addTag(serviceOptions);
+    public ConsulClusterManager(final ConsulClusterManagerOptions options) {
+        this.serviceOptions = options.getServiceOptions();
+        this.consulClientOptions = options.getClientOptions();
+        this.nodeId = options.getNodeId();
     }
 
     private void init() {
@@ -217,7 +198,7 @@ public class ConsulClusterManager implements ClusterManager {
             if (event.succeeded()) {
                 Observable.fromIterable(event.nextResult().getList())
                         .subscribeOn(Schedulers.from(watcherThreadExecutor))
-                        .filter(service -> service.getTags().contains(COMMON_NODE_TAG))
+                        .filter(service -> service.getTags().contains(ConsulClusterManagerOptions.getCommonNodeTag()))
                         .map(service -> getNodeIdOutOfServiceName(service.getName()))
                         .filter(receivedNodeId -> !receivedNodeId.equals(nodeId))
                         .doOnNext(newNodeId -> log.trace("New node: '{}' was added to consul", newNodeId))
@@ -241,7 +222,7 @@ public class ConsulClusterManager implements ClusterManager {
         nodes = consulClient.rxCatalogServices()
                 .toObservable()
                 .flatMapIterable(ServiceList::getList)
-                .filter(service -> service.getTags().contains(COMMON_NODE_TAG))
+                .filter(service -> service.getTags().contains(ConsulClusterManagerOptions.getCommonNodeTag()))
                 .map(service -> getNodeIdOutOfServiceName(service.getName()))
                 .doOnNext(s -> log.trace("Received: '{}' from Consul.", s))
                 .toList()
@@ -250,16 +231,6 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("Node are: '{}'", nodes);
     }
 
-    private void addTag(ServiceOptions options) {
-        List<String> currentTags = options.getTags();
-        List<String> newTags = new ArrayList<>(currentTags);
-        newTags.add(ConsulClusterManager.COMMON_NODE_TAG);
-        options.setTags(newTags);
-    }
-
-    private String buildServiceName(String serviceName, String nodeId) {
-        return serviceName + "[" + nodeId + "]";
-    }
 
     private String getNodeIdOutOfServiceName(String serviceName) {
         return serviceName.substring(serviceName.lastIndexOf('[') + 1, serviceName.length() - 1);
