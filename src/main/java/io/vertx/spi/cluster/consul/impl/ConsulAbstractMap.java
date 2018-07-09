@@ -6,13 +6,14 @@ import io.vertx.core.shareddata.impl.ClusterSerializable;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
+import java.util.Base64;
 
 /**
  * Provides specific functionality for async clustering maps.
  *
  * @author Roman Levytskyi
  */
-abstract class ConsulAbstractMap<K, V> {
+class ConsulAbstractMap<K, V> {
 
     /**
      * Verifies whether value is not null.
@@ -41,6 +42,21 @@ abstract class ConsulAbstractMap<K, V> {
 
     String getConsulKey(String name, K k) {
         return name + "/" + k.toString();
+    }
+
+    String encode(Object object) throws IOException {
+        StringBuilder endoded = new StringBuilder();
+        endoded
+                .append(new String(Base64.getEncoder().encode(asByte(object))))
+                .append("--SEPARATOR--")
+                .append(object.toString());
+        return endoded.toString();
+    }
+
+    <T> T decode(String bytes) throws Exception {
+        int index = bytes.lastIndexOf("--SEPARATOR--");
+        String actualBytes = bytes.substring(0, index);
+        return (T) asObject(Base64.getDecoder().decode(actualBytes.getBytes()));
     }
 
     /**

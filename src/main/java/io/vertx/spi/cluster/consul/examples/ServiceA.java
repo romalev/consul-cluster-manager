@@ -9,12 +9,12 @@ import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
+import io.vertx.spi.cluster.consul.impl.ConsulClusterManagerOptions;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -45,11 +45,8 @@ public class ServiceA {
         // no need to set node id since it's being generated within cluster manager.
         // serviceOptions.setId(UUID.randomUUID().toString());
 
-        // 2. consul agent options.
-        ConsulClientOptions options = new ConsulClientOptions();
-
         // 3. consul cluster manager.
-        ConsulClusterManager consulClusterManager = new ConsulClusterManager(serviceOptions, options);
+        ConsulClusterManager consulClusterManager = new ConsulClusterManager(new ConsulClusterManagerOptions(serviceOptions));
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
