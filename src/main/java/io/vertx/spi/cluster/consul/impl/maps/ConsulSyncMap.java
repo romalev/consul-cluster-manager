@@ -1,14 +1,11 @@
-package io.vertx.spi.cluster.consul.impl;
+package io.vertx.spi.cluster.consul.impl.maps;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxException;
 import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValue;
-import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.Watch;
+import io.vertx.ext.consul.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,18 +31,23 @@ public final class ConsulSyncMap<K, V> extends ConsulAbstractMap<K, V> implement
     private final String name;
     private final Vertx vertx;
     private final ConsulClient consulClient;
+    private final ConsulClientOptions consulClientOptions;
+
+    private String sessionId;
 
     // internal cache of consul KV store.
     private Map<K, V> cache;
 
-    public ConsulSyncMap(String name, Vertx vertx, ConsulClient consulClient) {
+    public ConsulSyncMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions) {
         Objects.requireNonNull(vertx);
         Objects.requireNonNull(consulClient);
+        Objects.requireNonNull(consulClientOptions);
         this.name = name;
         this.vertx = vertx;
         this.consulClient = consulClient;
+        this.consulClientOptions = consulClientOptions;
         initCache();
-        registerWatcher();
+        registerCacheWatcher();
         printCache();
     }
 
@@ -202,9 +204,9 @@ public final class ConsulSyncMap<K, V> extends ConsulAbstractMap<K, V> implement
      * Watch registration. Watch has to be registered in order to keep the internal cache consistent and in sync with central
      * Consul KV store. Watch listens to events that are coming from Consul KV store and updates the internal cache appropriately.
      */
-    private void registerWatcher() {
+    private void registerCacheWatcher() {
         Watch
-                .keyPrefix(name, vertx)
+                .keyPrefix(name, vertx, consulClientOptions)
                 .setHandler(promise -> {
                     if (promise.succeeded()) {
                         // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache gets updated and in sync with Consul KV store.

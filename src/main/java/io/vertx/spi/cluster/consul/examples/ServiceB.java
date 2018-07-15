@@ -9,7 +9,6 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
-import io.vertx.spi.cluster.consul.impl.ConsulClusterManagerOptions;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -41,7 +40,7 @@ public class ServiceB {
         // serviceOptions.setId(UUID.randomUUID().toString());
 
         // 3. consul cluster manager.
-        ConsulClusterManager consulClusterManager = new ConsulClusterManager(new ConsulClusterManagerOptions(serviceOptions));
+        ConsulClusterManager consulClusterManager = new ConsulClusterManager();
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();

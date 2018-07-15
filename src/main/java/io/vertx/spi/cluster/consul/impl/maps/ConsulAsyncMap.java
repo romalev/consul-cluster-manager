@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl;
+package io.vertx.spi.cluster.consul.impl.maps;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;

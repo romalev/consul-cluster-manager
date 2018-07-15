@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl;
+package io.vertx.spi.cluster.consul.impl.maps;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -11,8 +11,8 @@ import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ChoosableIterable;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValue;
+import io.vertx.spi.cluster.consul.impl.ChoosableSet;
 
-import java.io.IOException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -75,7 +75,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implement
                                     future.fail(resultHandler.cause());
                                 }
                             });
-                        } catch (IOException e) {
+                        } catch (RuntimeException e) {
                             log.error("Exception occurred: '{}'", e.getCause().toString());
                             future.fail(e.getCause());
                         }

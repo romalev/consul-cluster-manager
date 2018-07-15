@@ -9,16 +9,12 @@ import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
-import io.vertx.spi.cluster.consul.impl.ConsulClusterManagerOptions;
 
-import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Arrays;
 
 public class ServiceA {
 
@@ -34,19 +30,9 @@ public class ServiceA {
     public static void main(String[] args) throws UnknownHostException {
         log.info("Booting up the ServiceA...");
 
-        int port = AvailablePortFinder.find(2000, 2010);
-
-        // 1. service options
-        ServiceOptions serviceOptions = new ServiceOptions();
-        serviceOptions.setAddress(InetAddress.getLocalHost().getHostAddress());
-        serviceOptions.setPort(port);
-        serviceOptions.setName("Service A");
-        serviceOptions.setTags(Arrays.asList("test", "no-production-ready"));
-        // no need to set node id since it's being generated within cluster manager.
-        // serviceOptions.setId(UUID.randomUUID().toString());
 
         // 3. consul cluster manager.
-        ConsulClusterManager consulClusterManager = new ConsulClusterManager(new ConsulClusterManagerOptions(serviceOptions));
+        ConsulClusterManager consulClusterManager = new ConsulClusterManager();
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
@@ -58,7 +44,7 @@ public class ServiceA {
                 log.info("Clustered vertx instance has been successfully created.");
                 vertx = res.result();
 
-                ServiceAVerticle verticle = new ServiceAVerticle(port);
+                ServiceAVerticle verticle = new ServiceAVerticle();
                 log.info("Deploying ServiceAVerticle ... ");
                 vertx.deployVerticle(verticle);
             } else {
@@ -71,15 +57,9 @@ public class ServiceA {
      * Simple dedicated test verticle.
      */
     private static class ServiceAVerticle extends AbstractVerticle {
-        private final int httpPort;
-
-        ServiceAVerticle(int httpPort) {
-            this.httpPort = httpPort;
-        }
-
         @Override
         public void start(Future<Void> startFuture) throws Exception {
-            log.trace("Staring ServiceAVerticle on port: '{}'", httpPort);
+            log.trace("Staring ServiceAVerticle...");
             final HttpServer httpServer = vertx.createHttpServer();
             final Router router = Router.router(vertx);
 
@@ -95,9 +75,9 @@ public class ServiceA {
                 event.response().setStatusCode(HttpResponseStatus.OK.code()).end("Working!");
             });
 
-            httpServer.requestHandler(router::accept).listen(httpPort, result -> {
+            httpServer.requestHandler(router::accept).listen(AvailablePortFinder.find(2000, 2010), result -> {
                 if (result.succeeded()) {
-                    log.trace("ServiceAVerticle has been started.");
+                    log.trace("ServiceAVerticle has been started on port: '{}'", result.result().actualPort());
                     startFuture.complete();
                 } else {
                     log.warn("ServiceAVerticle couldn't get started :(. Details: '{}'", startFuture.cause().getMessage());

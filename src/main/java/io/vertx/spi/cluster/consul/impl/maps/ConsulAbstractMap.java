@@ -1,6 +1,7 @@
-package io.vertx.spi.cluster.consul.impl;
+package io.vertx.spi.cluster.consul.impl.maps;
 
 import io.vertx.core.Future;
+import io.vertx.core.VertxException;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.shareddata.impl.ClusterSerializable;
 
@@ -44,13 +45,17 @@ class ConsulAbstractMap<K, V> {
         return name + "/" + k.toString();
     }
 
-    String encode(Object object) throws IOException {
-        StringBuilder endoded = new StringBuilder();
-        endoded
-                .append(new String(Base64.getEncoder().encode(asByte(object))))
-                .append("--SEPARATOR--")
-                .append(object.toString());
-        return endoded.toString();
+    String encode(Object object) {
+        StringBuilder encoded = new StringBuilder();
+        try {
+            encoded
+                    .append(new String(Base64.getEncoder().encode(asByte(object))))
+                    .append("--SEPARATOR--")
+                    .append(object.toString());
+        } catch (IOException e) {
+            throw new VertxException(e);
+        }
+        return encoded.toString();
     }
 
     <T> T decode(String bytes) throws Exception {
