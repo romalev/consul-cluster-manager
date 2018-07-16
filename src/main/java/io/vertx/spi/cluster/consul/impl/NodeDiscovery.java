@@ -1,7 +1,7 @@
 package io.vertx.spi.cluster.consul.impl;
 
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
-import io.vertx.core.VertxException;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.NodeListener;
@@ -12,32 +12,31 @@ import io.vertx.ext.consul.Watch;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 /**
- * Central Consul node manager.
+ * Consul node map - discovers new vertx nodes within the consul cluster and keeps them locally in the cache.
  *
  * @author Roman Levytskyi
  */
-public final class NodeManager {
+public final class NodeDiscovery {
 
-    private static final Logger log = LoggerFactory.getLogger(NodeManager.class);
+    private static final Logger log = LoggerFactory.getLogger(NodeDiscovery.class);
+    // local cache of all vertx cluster nodes.
+    private List<String> nodes;
 
     private final String nodeId;
-    private final List<String> nodes;
     private final String nodeMapName;
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
     private final ConsulClient consulClient;
     private final NodeListener nodeListener;
 
-    public NodeManager(Vertx vertx, ConsulClientOptions options, ConsulClient consulClient, NodeListener nodeListener, String nodeId, String nodeMapName) {
-        Objects.requireNonNull(vertx);
-        Objects.requireNonNull(options);
-        Objects.requireNonNull(consulClient);
-        Objects.requireNonNull(nodeId);
-        Objects.requireNonNull(nodeMapName);
+    public NodeDiscovery(Vertx vertx,
+                         ConsulClientOptions options,
+                         ConsulClient consulClient,
+                         NodeListener nodeListener,
+                         String nodeId,
+                         String nodeMapName) {
         this.consulClient = consulClient;
         this.vertx = vertx;
         this.consulClientOptions = options;
@@ -46,40 +45,25 @@ public final class NodeManager {
         this.nodeListener = nodeListener;
         this.nodeId = nodeId;
         this.nodeMapName = nodeMapName;
-        this.nodes = getAvailableClusterNodes();
-
     }
 
 
     /**
-     * Returns nodes that are currently available within the cluster.
+     * Discovers nodes that are currently available within the cluster.
      */
-    private List<String> getAvailableClusterNodes() {
+    public Future<List<String>> discoverClusterNodes() {
         log.trace("Trying to fetch all the nodes that are available within the consul cluster.");
-
-        CompletableFuture<List<String>> futureNodes = new CompletableFuture<>();
+        Future<List<String>> futureNodes = Future.future();
         consulClient.getKeys(nodeMapName, result -> {
             if (result.succeeded()) {
+                log.trace("List of fetched nodes is: '{}'", result.result());
+                this.nodes = result.result();
                 futureNodes.complete(result.result());
             } else {
-                futureNodes.completeExceptionally(result.cause());
+                futureNodes.fail(result.cause());
             }
         });
-
-        List<String> nodes;
-        try {
-            nodes = futureNodes.get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Exception has occurred while fetching all the nodes within the cluster due to: '{}'.", e.getCause().toString());
-            throw new VertxException(e);
-        }
-
-        log.trace("List of fetched nodes is: '{}'", nodes);
-        return nodes;
-    }
-
-    public List<String> getNodes() {
-        return nodes;
+        return futureNodes;
     }
 
     /**
@@ -107,5 +91,9 @@ public final class NodeManager {
                 log.error("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, event.cause().getMessage());
             }
         });
+    }
+
+    public List<String> getNodes() {
+        return nodes;
     }
 }

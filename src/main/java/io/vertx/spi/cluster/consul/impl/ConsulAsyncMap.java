@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl.maps;
+package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -9,6 +9,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.ConsulClient;
+import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.KeyValue;
 
 import java.util.*;
@@ -24,18 +25,16 @@ import java.util.stream.Collectors;
  *
  * @author Roman Levytskyi
  */
-public class ConsulAsyncMap<K, V> extends ConsulAbstractMap<K, V> implements AsyncMap<K, V> {
+public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K, V> {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
-    private final String name;
-    private final Vertx vertx;
-    private final ConsulClient consulClient;
-
-    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient consulClient) {
-        this.name = name;
-        this.vertx = vertx;
-        this.consulClient = consulClient;
+    public ConsulAsyncMap(String name,
+                          Vertx vertx,
+                          ConsulClient consulClient,
+                          ConsulClientOptions consulClientOptions,
+                          String sessionId) {
+        super(vertx, consulClient, consulClientOptions, name, sessionId);
         printOutAsyncMap();
     }
 

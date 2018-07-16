@@ -1,5 +1,6 @@
 package io.vertx.spi.cluster.consul;
 
+import com.google.common.collect.ImmutableSet;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
@@ -16,16 +17,9 @@ import io.vertx.ext.consul.Check;
 import io.vertx.ext.consul.CheckStatus;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.spi.cluster.consul.impl.NodeJoiner;
-import io.vertx.spi.cluster.consul.impl.NodeManager;
-import io.vertx.spi.cluster.consul.impl.maps.ConsulAsyncMap;
-import io.vertx.spi.cluster.consul.impl.maps.ConsulAsyncMultiMap;
-import io.vertx.spi.cluster.consul.impl.maps.ConsulSyncMap;
+import io.vertx.spi.cluster.consul.impl.*;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -47,23 +41,28 @@ public class ConsulClusterManager implements ClusterManager {
 
     private static final String HA_INFO_MAP = "__vertx.haInfo";
     private static final String NODES_MAP = "__vertx.nodes";
+    private static final String SUBS_MA = "__vertx.subs";
+
+    // indicates names of the maps which entries are going to be locked by nodes.
+    // particular map entry gets locked by node that has just created it.
+    private static final Set<String> lockedMaps = ImmutableSet.of(HA_INFO_MAP, NODES_MAP, SUBS_MA);
+    // represents id of consul session -> this is used to lock map entries.
+    private String nodeSessionId;
 
     private Vertx vertx;
     private ConsulClient consulClient;
     private NodeListener nodeListener;
-    private NodeManager nodeManager;
+    private NodeDiscovery nodeDiscovery;
     private NodeJoiner nodeJoiner;
 
     private volatile boolean active;
 
-    private String nodeSessionId;
+    private Map haInfoCache;
 
     private final String nodeId;
     private final ConsulClientOptions consulClientOptions;
     private final Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
     private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
-
-    private ConsulSyncMap haInfoMap;
 
     public ConsulClusterManager(final ConsulClientOptions options) {
         Objects.requireNonNull(options, "Consul client options can't be null");
@@ -82,9 +81,8 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("Injecting Vert.x instance and Initializing consul client ...");
         this.vertx = vertx;
         this.consulClient = ConsulClient.create(vertx, consulClientOptions);
-        this.nodeJoiner = new NodeJoiner(vertx, consulClient);
-        this.nodeManager = new NodeManager(vertx, consulClientOptions, consulClient, nodeListener, nodeId, NODES_MAP);
-        this.haInfoMap = new ConsulSyncMap(HA_INFO_MAP, vertx, consulClient, consulClientOptions);
+        this.nodeJoiner = new NodeJoiner(vertx, consulClient, NODES_MAP);
+        this.nodeDiscovery = new NodeDiscovery(vertx, consulClientOptions, consulClient, nodeListener, nodeId, NODES_MAP);
     }
 
     /**
@@ -99,7 +97,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async multimap by name: '{}'", name);
         Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient));
+        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient, consulClientOptions, nodeSessionId));
         futureMultiMap.complete(asyncMultiMap);
         futureMultiMap.setHandler(asyncResultHandler);
     }
@@ -108,7 +106,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient));
+        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient, consulClientOptions, nodeSessionId));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
 
@@ -118,7 +116,8 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> Map<K, V> getSyncMap(String name) {
         // name is not being used.
         log.trace("Getting sync map by name: '{}'", name);
-        return haInfoMap;
+        boolean lock = lockedMaps.contains(name);
+        return new ConsulSyncMap<K, V>(name, vertx, consulClient, consulClientOptions, nodeSessionId, haInfoCache);
     }
 
     @Override
@@ -139,14 +138,14 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public List<String> getNodes() {
-        return nodeManager.getNodes();
+        return nodeDiscovery.getNodes();
     }
 
     @Override
     public void nodeListener(NodeListener listener) {
         log.trace("Initializing the node listener...");
         this.nodeListener = listener;
-        nodeManager.listenForNewNodes().start();
+        // nodeDiscovery.listenForNewNodes().start();
     }
 
     @Override
@@ -170,7 +169,20 @@ public class ConsulClusterManager implements ClusterManager {
             log.warn("'{}' is NOT active.", nodeId);
             future.complete();
         }
-        future.setHandler(resultHandler);
+
+        // while joining the cluster joining node has to :
+        // a: discover rest of the vertx nodes within the consul cluster and cache them locally.
+        // b: receive HA information -> which is stored in __vertx.haInfo map within Consul KV store.
+        future
+                .compose(aVoid -> nodeDiscovery.discoverClusterNodes())
+                .compose(aList -> initHaInfoCache())
+                .compose(haInfoCache -> {
+                    Future<Void> endFuture = Future.future();
+                    this.haInfoCache = new ConcurrentHashMap();
+                    this.haInfoCache.putAll(haInfoCache);
+                    endFuture.complete();
+                    return endFuture;
+                }).setHandler(resultHandler);
     }
 
     @Override
@@ -210,5 +222,25 @@ public class ConsulClusterManager implements ClusterManager {
                 });
             });
         });
+    }
+
+    private <K, V> Future<Map<K, V>> initHaInfoCache() {
+        log.trace("Initializing: '{}' internal cache ... ", HA_INFO_MAP);
+        Future<Map<K, V>> futureHaInfoCache = Future.future();
+        consulClient.getValues(HA_INFO_MAP, futureMap -> {
+            if (futureMap.succeeded()) {
+                if (futureMap.result().getList() == null) {
+                    futureHaInfoCache.complete(new ConcurrentHashMap<>());
+                } else {
+                    // TODO : is casting here sufficient here ???
+                    Map<K, V> collectedMap = futureMap.result().getList().stream().collect(Collectors.toMap(o -> (K) o.getKey(), o -> (V) o.getValue()));
+                    futureHaInfoCache.complete(collectedMap);
+                }
+            } else {
+                log.trace("Can't initialize the : '{}' due to: '{}'", HA_INFO_MAP, futureMap.cause().toString());
+                futureHaInfoCache.fail(futureMap.cause());
+            }
+        });
+        return futureHaInfoCache;
     }
 }

@@ -11,7 +11,7 @@ import java.util.Set;
 /**
  * @author <a href="http://tfox.org">Tim Fox</a>
  */
-public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
+class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
 
     private final Set<T> ids;
     private volatile Iterator<T> iter;

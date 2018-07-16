@@ -13,7 +13,6 @@ import io.vertx.ext.consul.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
-import java.util.Objects;
 
 /**
  * @author Roman Levytskyi
@@ -25,19 +24,20 @@ public class NodeJoiner {
 
     private final Vertx vertx;
     private final ConsulClient consulClient;
+    private final String nodeMapName;
 
-    public NodeJoiner(Vertx vertx, ConsulClient consulClient) {
-        Objects.requireNonNull(vertx);
-        Objects.requireNonNull(consulClient);
+    public NodeJoiner(Vertx vertx, ConsulClient consulClient, String nodeMapName) {
         this.vertx = vertx;
         this.consulClient = consulClient;
+        this.nodeMapName = nodeMapName;
     }
 
     public void join(String nodeId, Handler<AsyncResult<String>> resultHandler) {
         getTcpAddress()
-                .compose(tcp -> createTcpServer(tcp))
+                .compose(this::createTcpServer)
                 .compose(tcp -> registerTcpCheck(nodeId, tcp))
                 .compose(checkId -> registerSession(nodeId, checkId))
+                .compose(sessionId -> registerNode(nodeId, sessionId))
                 .setHandler(resultHandler);
     }
 
@@ -70,7 +70,7 @@ public class NodeJoiner {
         Future<String> future = Future.future();
         SessionOptions sessionOptions = new SessionOptions();
         sessionOptions.setBehavior(SessionBehavior.DELETE);
-        sessionOptions.setName(nodeId);
+        sessionOptions.setName("session-" + nodeId);
 
         sessionOptions.setChecks(Arrays.asList(checkId, "serfHealth"));
         consulClient.createSessionWithOptions(sessionOptions, session -> {
@@ -85,7 +85,34 @@ public class NodeJoiner {
         return future;
     }
 
+    /**
+     * Gets the node registered within the Consul cluster.
+     *
+     * @param sessionId holds the session id
+     * @param nodeId    represents the id of the node that joined the cluster.
+     * @return future with session id in case of success, otherwise future with message indicating the failure.
+     */
+    private Future<String> registerNode(String nodeId, String sessionId) {
+        Future<String> futureWithSessionId = Future.future();
+        consulClient.putValueWithOptions(nodeMapName + "/" + nodeId, nodeId, new KeyValueOptions().setAcquireSession(sessionId), resultHandler -> {
+            if (resultHandler.succeeded()) {
+                log.trace("Node: '{}' has been registered in consul cluster.");
+                futureWithSessionId.complete(sessionId);
+            } else {
+                log.error("Couldn't register the node: '{}' in consul cluster due to: '{}'", nodeId, futureWithSessionId.cause().toString());
+                futureWithSessionId.fail(resultHandler.cause());
+            }
+        });
+        return futureWithSessionId;
+    }
 
+    /**
+     * Creates simple tcp server used to receive heart beat messages from consul cluster.
+     *
+     * @param tcpAddress represents host and port of tcp server.
+     * @return in case tcp server is created and it listens for heart beat messages -> future with tcp address, otherwise -> future with message
+     * indicating the cause of the failure.
+     */
     private Future<TcpAddress> createTcpServer(final TcpAddress tcpAddress) {
         Future<TcpAddress> future = Future.future();
         NetServer netServer = vertx.createNetServer(new NetServerOptions().setHost(tcpAddress.getHost()).setPort(tcpAddress.getPort()));
@@ -98,7 +125,7 @@ public class NodeJoiner {
     }
 
     /**
-     * Returns a tcp address -> this will get used by tcp check.
+     * @return
      */
     private Future<TcpAddress> getTcpAddress() {
         Future<TcpAddress> futureTcp = Future.future();
