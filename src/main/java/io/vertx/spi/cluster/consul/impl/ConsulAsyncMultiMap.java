@@ -10,6 +10,7 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ChoosableIterable;
 import io.vertx.ext.consul.ConsulClient;
+import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.KeyValue;
 
 import java.io.IOException;
@@ -17,8 +18,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -32,21 +31,21 @@ import java.util.stream.Collectors;
  *
  * @author Roman Levytskyi
  */
-public class ConsulAsyncMultiMap<K, V> extends ConsulAbstractMap<K, V> implements AsyncMultiMap<K, V> {
+public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V> {
 
     private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
-    private final ConsulClient consulClient;
     private final Vertx vertx;
-    private final String name;
+    private final ConsulClientOptions consulClientOptions;
 
-    // TODO: consider adding a cache in cast the connection between node and consul in unstable.
-    private ConcurrentMap<String, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
-
-    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient) {
-        this.name = name;
-        this.consulClient = consulClient;
+    public ConsulAsyncMultiMap(String name,
+                               Vertx vertx,
+                               ConsulClient consulClient,
+                               ConsulClientOptions consulClientOptions,
+                               String sessionId) {
+        super(consulClient, name, sessionId);
         this.vertx = vertx;
+        this.consulClientOptions = consulClientOptions;
         printOutAsyncMultiMap();
     }
 

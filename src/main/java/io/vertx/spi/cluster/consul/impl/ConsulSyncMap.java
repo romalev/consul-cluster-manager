@@ -5,86 +5,37 @@ import io.vertx.core.VertxException;
 import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValue;
-import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.Watch;
+import io.vertx.ext.consul.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 /**
  * Distributed map implementation based on consul key-value store.
- * <p>
- * Note: Since it is a sync - based map (i.e blocking) - run potentially "blocking code" out of vertx-event-loop context.
- * TODO: 1) most of logging has to be removed when consul cluster manager is more or less stable.
- * TODO: 2) everything has to be documented in javadocs.
  *
  * @author Roman Levytskyi
  */
-public final class ConsulSyncMap<K, V> extends ConsulAbstractMap<K, V> implements Map<K, V> {
+public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
 
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
-
-    private final String name;
-    private final Vertx vertx;
-    private final ConsulClient consulClient;
-
     // internal cache of consul KV store.
-    private Map<K, V> cache;
+    private final Map<K, V> cache;
+    private final Vertx vertx;
+    private final ConsulClientOptions consulClientOptions;
 
-    public ConsulSyncMap(String name, Vertx vertx, ConsulClient consulClient) {
-        Objects.requireNonNull(vertx);
-        Objects.requireNonNull(consulClient);
-        this.name = name;
+    public ConsulSyncMap(String name,
+                         Vertx vertx,
+                         ConsulClient consulClient,
+                         ConsulClientOptions consulClientOptions,
+                         String sessionId,
+                         Map<K, V> cache) {
+        super(consulClient, name, sessionId);
         this.vertx = vertx;
-        this.consulClient = consulClient;
-        initCache();
-        registerWatcher();
+        this.consulClientOptions = consulClientOptions;
+        this.cache = cache;
+        registerCacheWatcher();
         printCache();
-    }
-
-    /**
-     * note: blocking call.
-     */
-    private void initCache() {
-        log.trace("Initializing haInfo internal cache ... ");
-        CompletableFuture<Map<K, V>> completableFuture = new CompletableFuture<>();
-        consulClient.getValues(name, futureMap -> {
-            if (futureMap.succeeded()) {
-                if (futureMap.result().getList() == null) {
-                    completableFuture.complete(new ConcurrentHashMap<>());
-                } else {
-                    Map<K, V> collectedMap = futureMap.result().getList()
-                            .stream()
-                            .collect(Collectors.toMap(keyValue -> (K) keyValue.getKey(), keyValue -> {
-                                try {
-                                    return decode(keyValue.getValue());
-                                } catch (Exception e) {
-                                    throw new VertxException(e);
-                                }
-                            }));
-                    completableFuture.complete(collectedMap);
-                }
-            } else {
-                completableFuture.completeExceptionally(futureMap.cause());
-            }
-        });
-
-        try {
-            if (cache == null) {
-                cache = new ConcurrentHashMap<>();
-            }
-            cache.putAll(completableFuture.get());
-            log.trace("__vertx.haInfo cache has been initialized: '{}'", Json.encodePrettily(cache));
-        } catch (InterruptedException | ExecutionException e) {
-            throw new VertxException(e);
-        }
     }
 
 
@@ -118,33 +69,14 @@ public final class ConsulSyncMap<K, V> extends ConsulAbstractMap<K, V> implement
     @Nullable
     @Override
     public V put(K key, V value) {
-        log.trace("Putting KV: '{}' -> '{}' to Consul KV store.", key, value);
-        // async
-        String consulKey = getConsulKey(name, key);
-        try {
-            consulClient.putValue(consulKey, encode(value), event -> {
-                if (event.succeeded()) {
-                    log.trace("KV: '{}' -> '{}' has been placed to Consul KV store.", consulKey, value);
-                } else {
-                    log.warn("Can't put KV: '{}' -> '{}' to Consul KV store. Details: '{}'", consulKey, value, event.cause().toString());
-                }
-            });
-
-        } catch (Exception e) {
-            throw new VertxException(e);
-        }
+        putValue(key, value).setHandler(event -> {
+        });
         return cache.put(key, value);
     }
 
     @Override
     public V remove(Object key) {
-        String consulKey = name + "/" + key.toString();
-        consulClient.deleteValue(consulKey, event -> {
-            if (event.succeeded()) {
-                log.trace("K: '{}' record has been deleted from Consul KV Store", consulKey);
-            } else {
-                log.warn("Can't delete a record by K: '{}' from Consul store due to: '{}'", consulKey, event.cause().toString());
-            }
+        removeValue((K) key).setHandler(event -> {
         });
         return cache.remove(key);
     }
@@ -152,31 +84,15 @@ public final class ConsulSyncMap<K, V> extends ConsulAbstractMap<K, V> implement
     @Override
     public void putAll(Map<? extends K, ? extends V> m) {
         log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
-
-        m.forEach((key, value) -> {
-            try {
-                consulClient.putValue(getConsulKey(name, key), encode(value), event -> {
-                });
-            } catch (Exception e) {
-                throw new VertxException(e);
-            }
-
-        });
+        m.forEach((key, value) -> putValue(key, value).setHandler(event -> {
+        }));
         cache.putAll(m);
     }
 
     @Override
     public void clear() {
-        log.trace("Clearing the KV store name by key prefix: '{}'", this.name);
-
-        consulClient.deleteValues(this.name, event -> {
-            if (event.succeeded()) {
-                log.trace("Consul KV store has been cleared by key prefix: '{}'", name);
-            } else {
-                log.error("Can't clear Consul KV store by key prefix: '{}' due to: '{}'", name, event.cause().toString());
-            }
+        clearUp().setHandler(event -> {
         });
-
         cache.clear();
     }
 
@@ -202,9 +118,9 @@ public final class ConsulSyncMap<K, V> extends ConsulAbstractMap<K, V> implement
      * Watch registration. Watch has to be registered in order to keep the internal cache consistent and in sync with central
      * Consul KV store. Watch listens to events that are coming from Consul KV store and updates the internal cache appropriately.
      */
-    private void registerWatcher() {
+    private void registerCacheWatcher() {
         Watch
-                .keyPrefix(name, vertx)
+                .keyPrefix(name, vertx, consulClientOptions)
                 .setHandler(promise -> {
                     if (promise.succeeded()) {
                         // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache gets updated and in sync with Consul KV store.
