@@ -32,8 +32,7 @@ public class NodeJoiner {
         return getTcpAddress()
                 .compose(this::createTcpServer)
                 .compose(tcp -> registerTcpCheck(nodeId, tcp))
-                .compose(checkId -> registerSession(nodeId, checkId))
-                .compose(sessionId -> registerNode(nodeId, sessionId));
+                .compose(checkId -> registerSession(nodeId, checkId));
     }
 
     /**
@@ -78,27 +77,6 @@ public class NodeJoiner {
             }
         });
         return future;
-    }
-
-    /**
-     * Gets the node registered within the Consul cluster.
-     *
-     * @param sessionId holds the session id
-     * @param nodeId    represents the id of the node that joined the cluster.
-     * @return future with session id in case of success, otherwise future with message indicating the failure.
-     */
-    private Future<String> registerNode(String nodeId, String sessionId) {
-        Future<String> futureWithSessionId = Future.future();
-        consulClient.putValueWithOptions(ClusterManagerMaps.VERTX_NODES.getName() + "/" + nodeId, nodeId, new KeyValueOptions().setAcquireSession(sessionId), resultHandler -> {
-            if (resultHandler.succeeded()) {
-                log.trace("Node: '{}' has been registered in consul cluster.", nodeId);
-                futureWithSessionId.complete(sessionId);
-            } else {
-                log.error("Couldn't register the node: '{}' in consul cluster due to: '{}'", nodeId, futureWithSessionId.cause().toString());
-                futureWithSessionId.fail(resultHandler.cause());
-            }
-        });
-        return futureWithSessionId;
     }
 
     /**

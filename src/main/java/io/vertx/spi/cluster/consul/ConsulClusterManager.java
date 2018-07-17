@@ -42,21 +42,20 @@ public class ConsulClusterManager implements ClusterManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
 
-    // represents id of consul session -> this is used to lock map entries.
-    private String nodeSessionId;
-
     private Vertx vertx;
     private ConsulClient consulClient;
     private NodeListener nodeListener;
-    private NodeDiscovery nodeDiscovery;
     private NodeJoiner nodeJoiner;
-
+    private ConsulAsyncNodeMap asyncNodeMap;
     private volatile boolean active;
 
     private Map haInfoCache;
 
     private final String nodeId;
     private final ConsulClientOptions consulClientOptions;
+
+    // dedicated cache to keep session id where node id is the key. Consul session id used to lock map entries.
+    private final Map<String, String> sessionCache = new ConcurrentHashMap<>();
     private final Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
     private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
 
@@ -78,7 +77,6 @@ public class ConsulClusterManager implements ClusterManager {
         this.vertx = vertx;
         this.consulClient = ConsulClient.create(vertx, consulClientOptions);
         this.nodeJoiner = new NodeJoiner(vertx, consulClient);
-        this.nodeDiscovery = new NodeDiscovery(vertx, consulClientOptions, consulClient, nodeListener, nodeId);
     }
 
     /**
@@ -93,7 +91,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async multimap by name: '{}'", name);
         Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient, consulClientOptions, nodeSessionId));
+        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient, consulClientOptions, sessionCache.get(nodeId)));
         futureMultiMap.complete(asyncMultiMap);
         futureMultiMap.setHandler(asyncResultHandler);
     }
@@ -102,7 +100,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient, consulClientOptions, nodeSessionId));
+        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient, consulClientOptions, sessionCache.get(nodeId)));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
 
@@ -112,7 +110,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> Map<K, V> getSyncMap(String name) {
         // name is not being used.
         log.trace("Getting sync map by name: '{}' with initial cache: '{}'", name, Json.encodePrettily(haInfoCache));
-        return new ConsulSyncMap<K, V>(name, vertx, consulClient, consulClientOptions, nodeSessionId, haInfoCache);
+        return new ConsulSyncMap<K, V>(name, vertx, consulClient, consulClientOptions, sessionCache.get(nodeId), haInfoCache);
     }
 
     @Override
@@ -133,14 +131,14 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public List<String> getNodes() {
-        return nodeDiscovery.getNodes();
+        return asyncNodeMap.getNodes();
     }
 
     @Override
     public void nodeListener(NodeListener listener) {
         log.trace("Initializing the node listener...");
         this.nodeListener = listener;
-        // nodeDiscovery.listenForNewNodes().start();
+        // asyncNodeMap.listenForNewNodes().start();
     }
 
     @Override
@@ -151,15 +149,21 @@ public class ConsulClusterManager implements ClusterManager {
             active = true;
             future = nodeJoiner.join(nodeId)
                     .compose(sessionId -> {
-                        this.nodeSessionId = sessionId;
-                        return Future.succeededFuture();
+                        sessionCache.putIfAbsent(nodeId, sessionId);
+                        return Future.succeededFuture(sessionId);
                     })
-                    .compose(aVoid -> nodeDiscovery.discoverClusterNodes())
+                    .compose(sessionId -> getConsulAsyncNodeMap())
+                    .compose(asyncNodeMap -> {
+                        this.asyncNodeMap = asyncNodeMap;
+                        return Future.succeededFuture(asyncNodeMap);
+                    })
+                    .compose(consulAsyncNodeMap -> consulAsyncNodeMap.discoverClusterNodes())
+                    .compose(aVoid -> asyncNodeMap.registerNode())
                     .compose(aList -> initHaInfoCache())
                     .compose(haInfoCache -> {
                         Future<Void> endFuture = Future.future();
-                        this.haInfoCache = new ConcurrentHashMap();
-                        this.haInfoCache.putAll(haInfoCache);
+                        haInfoCache = new ConcurrentHashMap();
+                        haInfoCache.putAll(haInfoCache);
                         endFuture.complete();
                         return endFuture;
                     });
@@ -188,6 +192,12 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public boolean isActive() {
         return active;
+    }
+
+    private Future<ConsulAsyncNodeMap> getConsulAsyncNodeMap() {
+        Future<ConsulAsyncNodeMap> asyncNodeMapFuture = Future.future();
+        asyncNodeMapFuture.complete(new ConsulAsyncNodeMap(vertx, consulClientOptions, consulClient, nodeListener, nodeId, sessionCache.get(nodeId)));
+        return asyncNodeMapFuture;
     }
 
     /**

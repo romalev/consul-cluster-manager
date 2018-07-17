@@ -10,9 +10,7 @@ import io.vertx.ext.consul.KeyValueOptions;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
-import java.util.Base64;
-import java.util.EnumSet;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * Provides specific functionality for async clustering maps.
@@ -113,6 +111,22 @@ abstract class ConsulMap<K, V> {
             } else {
                 log.trace("Can't clear: '{}' due to: '{}'", result.cause().toString());
                 future.fail(result.cause());
+            }
+        });
+        return future;
+    }
+
+    protected Future<Set<K>> keys() {
+        log.trace("Fetching all keys from: {}", this.name);
+        Future<Set<K>> future = Future.future();
+        consulClient.getKeys(this.name, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                log.trace("Ks: '{}' of: '{}'", resultHandler.result(), this.name);
+                // FIXME
+                future.complete(new HashSet<>((List<K>) resultHandler.result()));
+            } else {
+                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
+                future.fail(resultHandler.cause());
             }
         });
         return future;
