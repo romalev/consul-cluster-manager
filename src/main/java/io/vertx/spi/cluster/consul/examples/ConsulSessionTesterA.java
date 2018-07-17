@@ -61,9 +61,9 @@ public class ConsulSessionTesterA {
 
         tester.run(event -> {
             if (event.succeeded()) {
-                tester.consulClient.deleteValue("vertx/keyA1", res -> {
+                tester.consulClient.deleteValue("vertx/keyA3", res -> {
                     if (res.succeeded()) {
-                        log.trace("KeyA1 -> value has gotten deleted.");
+                        log.trace("KeyA3 -> value has gotten deleted.");
                     }
                 });
 

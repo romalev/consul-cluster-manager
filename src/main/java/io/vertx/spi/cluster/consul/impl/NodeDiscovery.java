@@ -11,7 +11,6 @@ import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.Watch;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Consul node map - discovers new vertx nodes within the consul cluster and keeps them locally in the cache.
@@ -25,7 +24,6 @@ public final class NodeDiscovery {
     private List<String> nodes;
 
     private final String nodeId;
-    private final String nodeMapName;
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
     private final ConsulClient consulClient;
@@ -35,8 +33,7 @@ public final class NodeDiscovery {
                          ConsulClientOptions options,
                          ConsulClient consulClient,
                          NodeListener nodeListener,
-                         String nodeId,
-                         String nodeMapName) {
+                         String nodeId) {
         this.consulClient = consulClient;
         this.vertx = vertx;
         this.consulClientOptions = options;
@@ -44,7 +41,6 @@ public final class NodeDiscovery {
         // ALWAYS AND ALWAYS do checking on null while performing anything on nodeListener object.
         this.nodeListener = nodeListener;
         this.nodeId = nodeId;
-        this.nodeMapName = nodeMapName;
     }
 
 
@@ -54,7 +50,7 @@ public final class NodeDiscovery {
     public Future<List<String>> discoverClusterNodes() {
         log.trace("Trying to fetch all the nodes that are available within the consul cluster.");
         Future<List<String>> futureNodes = Future.future();
-        consulClient.getKeys(nodeMapName, result -> {
+        consulClient.getKeys(ClusterManagerMaps.VERTX_NODES.getName(), result -> {
             if (result.succeeded()) {
                 log.trace("List of fetched nodes is: '{}'", result.result());
                 this.nodes = result.result();
@@ -72,7 +68,7 @@ public final class NodeDiscovery {
     public Watch listenForNewNodes() {
         // - tricky !!! watchers are always executed  within the event loop context !!!
         // - nodeAdded() call must NEVER be called within event loop context ???!!!.
-        return Watch.keyPrefix(nodeMapName, vertx, consulClientOptions).setHandler(event -> {
+        return Watch.keyPrefix(ClusterManagerMaps.VERTX_NODES.getName(), vertx, consulClientOptions).setHandler(event -> {
             if (event.succeeded()) {
                 vertx.executeBlocking(blockingEvent -> {
                     // TODO: is filtering by this nodeId needed ?

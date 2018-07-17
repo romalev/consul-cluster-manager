@@ -13,10 +13,6 @@ import java.util.*;
 
 /**
  * Distributed map implementation based on consul key-value store.
- * <p>
- * Note: Since it is a sync - based map (i.e blocking) - run potentially "blocking code" out of vertx-event-loop context.
- * TODO: 1) most of logging has to be removed when consul cluster manager is more or less stable.
- * TODO: 2) everything has to be documented in javadocs.
  *
  * @author Roman Levytskyi
  */
@@ -25,6 +21,8 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
     // internal cache of consul KV store.
     private final Map<K, V> cache;
+    private final Vertx vertx;
+    private final ConsulClientOptions consulClientOptions;
 
     public ConsulSyncMap(String name,
                          Vertx vertx,
@@ -32,7 +30,9 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
                          ConsulClientOptions consulClientOptions,
                          String sessionId,
                          Map<K, V> cache) {
-        super(vertx, consulClient, consulClientOptions, name, sessionId);
+        super(consulClient, name, sessionId);
+        this.vertx = vertx;
+        this.consulClientOptions = consulClientOptions;
         this.cache = cache;
         registerCacheWatcher();
         printCache();
@@ -69,46 +69,30 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     @Nullable
     @Override
     public V put(K key, V value) {
-        putValue(key, value)
-                .setHandler(event -> {
-                });
+        putValue(key, value).setHandler(event -> {
+        });
         return cache.put(key, value);
     }
 
     @Override
     public V remove(Object key) {
-
+        removeValue((K) key).setHandler(event -> {
+        });
         return cache.remove(key);
     }
 
     @Override
     public void putAll(Map<? extends K, ? extends V> m) {
         log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
-
-        m.forEach((key, value) -> {
-            try {
-                consulClient.putValue(getConsulKey(name, key), encode(value), event -> {
-                });
-            } catch (Exception e) {
-                throw new VertxException(e);
-            }
-
-        });
+        m.forEach((key, value) -> putValue(key, value).setHandler(event -> {
+        }));
         cache.putAll(m);
     }
 
     @Override
     public void clear() {
-        log.trace("Clearing the KV store name by key prefix: '{}'", this.name);
-
-        consulClient.deleteValues(this.name, event -> {
-            if (event.succeeded()) {
-                log.trace("Consul KV store has been cleared by key prefix: '{}'", name);
-            } else {
-                log.error("Can't clear Consul KV store by key prefix: '{}' due to: '{}'", name, event.cause().toString());
-            }
+        clearUp().setHandler(event -> {
         });
-
         cache.clear();
     }
 

@@ -1,8 +1,6 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
-import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -20,25 +18,22 @@ import java.util.Arrays;
 public class NodeJoiner {
 
     private static final Logger log = LoggerFactory.getLogger(NodeJoiner.class);
-    private static final String TCP_CHECK_INTERVAL = "5s";
+    private static final String TCP_CHECK_INTERVAL = "10s";
 
     private final Vertx vertx;
     private final ConsulClient consulClient;
-    private final String nodeMapName;
 
-    public NodeJoiner(Vertx vertx, ConsulClient consulClient, String nodeMapName) {
+    public NodeJoiner(Vertx vertx, ConsulClient consulClient) {
         this.vertx = vertx;
         this.consulClient = consulClient;
-        this.nodeMapName = nodeMapName;
     }
 
-    public void join(String nodeId, Handler<AsyncResult<String>> resultHandler) {
-        getTcpAddress()
+    public Future<String> join(String nodeId) {
+        return getTcpAddress()
                 .compose(this::createTcpServer)
                 .compose(tcp -> registerTcpCheck(nodeId, tcp))
                 .compose(checkId -> registerSession(nodeId, checkId))
-                .compose(sessionId -> registerNode(nodeId, sessionId))
-                .setHandler(resultHandler);
+                .compose(sessionId -> registerNode(nodeId, sessionId));
     }
 
     /**
@@ -94,9 +89,9 @@ public class NodeJoiner {
      */
     private Future<String> registerNode(String nodeId, String sessionId) {
         Future<String> futureWithSessionId = Future.future();
-        consulClient.putValueWithOptions(nodeMapName + "/" + nodeId, nodeId, new KeyValueOptions().setAcquireSession(sessionId), resultHandler -> {
+        consulClient.putValueWithOptions(ClusterManagerMaps.VERTX_NODES.getName() + "/" + nodeId, nodeId, new KeyValueOptions().setAcquireSession(sessionId), resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("Node: '{}' has been registered in consul cluster.");
+                log.trace("Node: '{}' has been registered in consul cluster.", nodeId);
                 futureWithSessionId.complete(sessionId);
             } else {
                 log.error("Couldn't register the node: '{}' in consul cluster due to: '{}'", nodeId, futureWithSessionId.cause().toString());

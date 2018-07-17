@@ -1,18 +1,18 @@
 package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.impl.ClusterSerializable;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.KeyValueOptions;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
 import java.util.Base64;
+import java.util.EnumSet;
+import java.util.Objects;
 
 /**
  * Provides specific functionality for async clustering maps.
@@ -23,22 +23,18 @@ abstract class ConsulMap<K, V> {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulMap.class);
 
-    protected final Vertx vertx;
     protected final ConsulClient consulClient;
-    protected final ConsulClientOptions consulClientOptions;
     protected final String name;
     protected final String sessionId;
-    protected final boolean hasToBeLockedByConsulSession;
     protected final KeyValueOptions kvOptions;
 
-    public ConsulMap(Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String name, String sessionId) {
-        this.vertx = vertx;
+    protected final EnumSet<ClusterManagerMaps> clusterManagerMaps = EnumSet.of(ClusterManagerMaps.VERTX_HA_INFO, ClusterManagerMaps.VERTX_NODES, ClusterManagerMaps.VERTX_SUBS);
+
+    public ConsulMap(ConsulClient consulClient, String name, String sessionId) {
         this.consulClient = consulClient;
-        this.consulClientOptions = consulClientOptions;
         this.name = name;
         this.sessionId = sessionId;
-        this.hasToBeLockedByConsulSession = true;
-        this.kvOptions = hasToBeLockedByConsulSession ? new KeyValueOptions().setAcquireSession(sessionId) : null;
+        this.kvOptions = clusterManagerMaps.contains(ClusterManagerMaps.fromString(name)) ? new KeyValueOptions().setAcquireSession(sessionId) : null;
     }
 
     protected Future<Void> putValue(K k, V v) {
@@ -60,14 +56,16 @@ abstract class ConsulMap<K, V> {
                 });
     }
 
-    protected Future<Void> removeValue(K k) {
+    protected Future<V> removeValue(K k) {
+        log.trace("'{}' - trying to remove an entry by K: '{}' from CKV.", name, k);
         return assertKeyIsNotNull(k)
-                .compose(aVoid -> {
-                    Future<Void> future = Future.future();
+                .compose(aVoid -> getValue(k))
+                .compose(v -> {
+                    Future<V> future = Future.future();
                     consulClient.deleteValue(getConsulKey(name, k), resultHandler -> {
                         if (resultHandler.succeeded()) {
                             log.trace("'{}' - K: '{}' has been removed from CKV.", name, k.toString());
-                            future.succeeded();
+                            future.complete(v);
                         } else {
                             log.trace("'{}' - Can't delete K: '{}' from CKV due to: '{}'.", name, k.toString(), resultHandler.cause().toString());
                             future.fail(resultHandler.cause());
@@ -75,6 +73,49 @@ abstract class ConsulMap<K, V> {
                     });
                     return future;
                 });
+    }
+
+    protected Future<V> getValue(K k) {
+        log.trace("'{}' - getting an entry by K: '{}' from CKV.", name, k);
+        return assertKeyIsNotNull(k)
+                .compose(aVoid -> {
+                    Future<V> future = Future.future();
+                    final String consulKey = getConsulKey(name, k);
+                    consulClient.getValue(consulKey, resultHandler -> {
+                        if (resultHandler.succeeded()) {
+                            if (Objects.nonNull(resultHandler.result()) && Objects.nonNull(resultHandler.result().getValue())) {
+                                log.trace("'{}' - got an entry '{}' - '{}'", name, k.toString(), resultHandler.result().getValue());
+                                try {
+                                    future.complete(decode(resultHandler.result().getValue()));
+                                } catch (Exception e) {
+                                    future.fail(e.getCause());
+                                }
+                            } else {
+                                log.trace("'{}' - nothing is found by: '{}'", name, k.toString());
+                                future.complete();
+                            }
+                        } else {
+                            log.error("Failed to get an entry by K: '{}' from Consul Async KV store. Details: '{}'", k.toString(), resultHandler.cause().toString());
+                            future.fail(resultHandler.cause());
+                        }
+                    });
+                    return future;
+                });
+    }
+
+    protected Future<Void> clearUp() {
+        Future<Void> future = Future.future();
+        log.trace("{} - clearing this up.", name);
+        consulClient.deleteValues(name, result -> {
+            if (result.succeeded()) {
+                log.trace("'{}' - has been cleared.");
+                future.complete();
+            } else {
+                log.trace("Can't clear: '{}' due to: '{}'", result.cause().toString());
+                future.fail(result.cause());
+            }
+        });
+        return future;
     }
 
 

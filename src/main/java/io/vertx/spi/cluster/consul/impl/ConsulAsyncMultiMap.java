@@ -18,8 +18,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -37,15 +35,17 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
     private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
-    // TODO: consider adding a cache in cast the connection between node and consul in unstable.
-    private ConcurrentMap<String, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
+    private final Vertx vertx;
+    private final ConsulClientOptions consulClientOptions;
 
     public ConsulAsyncMultiMap(String name,
                                Vertx vertx,
                                ConsulClient consulClient,
                                ConsulClientOptions consulClientOptions,
                                String sessionId) {
-        super(vertx, consulClient, consulClientOptions, name, sessionId);
+        super(consulClient, name, sessionId);
+        this.vertx = vertx;
+        this.consulClientOptions = consulClientOptions;
         printOutAsyncMultiMap();
     }
 
