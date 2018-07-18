@@ -11,6 +11,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
+import static io.vertx.spi.cluster.consul.impl.Utils.decode;
+
 /**
  * Distributed map implementation based on consul key-value store.
  *

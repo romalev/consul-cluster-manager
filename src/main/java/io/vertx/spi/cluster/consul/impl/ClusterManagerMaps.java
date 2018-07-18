@@ -5,7 +5,7 @@ package io.vertx.spi.cluster.consul.impl;
  *
  * @author Roman Levytskyi
  */
-public enum ClusterManagerMaps {
+enum ClusterManagerMaps {
 
     // contains ha info about every available node within the cluster.
     VERTX_HA_INFO("__vertx.haInfo"),

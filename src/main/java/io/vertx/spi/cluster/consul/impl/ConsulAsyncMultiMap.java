@@ -21,6 +21,9 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static io.vertx.spi.cluster.consul.impl.Utils.decode;
+import static io.vertx.spi.cluster.consul.impl.Utils.encode;
+
 /**
  * Distributed async multimap implementation based on consul key-value store.
  * <p>
