@@ -15,9 +15,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * A utility that attempts to keep all data from all created (by node) Consul MAPS locally cached. This class
  * will watch the every consul map (by name), respond to update/create/delete events, pull down the data, re-create the maps if there was a connection
  * issue with Consul Agent.
- * <p>
- *
- * <p>
  * Correlations : node(sessionId) -> maps.
  */
 public class ConsulKeyValueCache<K, V> extends ConsulMap<K, V> implements Map<K, V> {

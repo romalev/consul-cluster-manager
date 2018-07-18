@@ -73,9 +73,9 @@ public class ConsulSessionTesterA {
     }
 
     public void run(Handler<AsyncResult<Void>> resultHandler) {
-
-        registerCheck()
-                .compose(aVoid -> createTcpServer())
+        createTcpServer()
+                .compose(aVoid -> registerService())
+                .compose(aVoid -> registerCheck())
                 .compose(aBoolean -> registerSession())
                 .compose(s -> putSmthWithinConsulMap(s, "vertx/keyA1", "serviceA1"))
                 .compose(s -> putSmthWithinConsulMap(s, "vertx/keyA2", "serviceA2"))
@@ -114,6 +114,21 @@ public class ConsulSessionTesterA {
         return future;
     }
 
+    private Future<Void> registerService() {
+        Future<Void> future = Future.future();
+        ServiceOptions serviceOptions = new ServiceOptions();
+        serviceOptions.setName(serviceName);
+        serviceOptions.setId(serviceName);
+
+        consulClient.registerService(serviceOptions, event -> {
+            if (event.succeeded()) {
+                log.trace("service: {} has been registered.", serviceName);
+                future.complete();
+            }
+        });
+        return future;
+    }
+
     private Future<Void> registerCheck() {
         Future<Void> future = Future.future();
 
@@ -124,6 +139,8 @@ public class ConsulSessionTesterA {
         checkOptions.setTcp(host + ":" + port);
         checkOptions.setInterval("5s");
         checkOptions.setStatus(CheckStatus.PASSING);
+        checkOptions.setServiceId(serviceName);
+        checkOptions.setDeregisterAfter("10s");
 
 
         consulClient.registerCheck(checkOptions, res -> {
