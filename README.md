@@ -13,6 +13,7 @@ As we all know Vert.x cluster managers are pluggable and so far we have 5 cluste
 - Apache Ignite - based: https://vertx.io/docs/vertx-ignite/java/
 - JGroups - based: https://github.com/vert-x3/vertx-jgroups
 - Atomix - based : https://github.com/atomix/atomix-vertx
+- Infinispan - based : https://github.com/vert-x3/vertx-infinispan 
 
 If you are already using Consul along with Vert.x within your system - it might be a good fit to use Consul directly as main manager for : 
 - discovery and group membership of Vert.x nodes in a cluster
@@ -25,6 +26,6 @@ Note : Cluster managers do not handle the event bus inter-node transport, this i
 
 ***Implementation details***
 
-Current consul cluster manager implementation is fully based on [**vertx-consul-client**](https://vertx.io/docs/vertx-consul-client/java/) and obviously vertx.core.
+Current consul cluster manager implementation is fully based on [**vertx-consul-client**](https://vertx.io/docs/vertx-consul-client/java/) and [**vertx.core**](https://vertx.io/docs/vertx-core/java/).
 
 *Stay tuned!* 

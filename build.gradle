@@ -18,6 +18,8 @@ ext {
 
 dependencies {
     testCompile group: 'junit', name: 'junit', version: junitVersion
+    testCompile group: 'com.pszymczyk.consul', name: 'embedded-consul', version: "1.1.1"
+    testCompile group: 'io.vertx', name: 'vertx-unit', version: vertxVersion
 
     compile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
     compile group: 'io.vertx', name: 'vertx-core', version: vertxVersion

@@ -21,7 +21,7 @@ import static io.vertx.spi.cluster.consul.impl.Utils.decode;
 public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
 
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
-    // internal cache of consul KV store.
+    // internal cache of consul KV store. it MUST ONLY BE updated by Consul watcher.
     private final Map<K, V> cache;
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
@@ -39,9 +39,6 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         registerCacheWatcher();
         printCache();
     }
-
-
-    // !!! --- so far just really dummy impl. !!! --- //
 
     @Override
     public int size() {
@@ -71,16 +68,17 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     @Nullable
     @Override
     public V put(K key, V value) {
+        // don't block
         putValue(key, value).setHandler(event -> {
         });
-        return cache.put(key, value);
+        return value;
     }
 
     @Override
     public V remove(Object key) {
         removeValue((K) key).setHandler(event -> {
         });
-        return cache.remove(key);
+        return cache.get(key);
     }
 
     @Override
@@ -88,14 +86,12 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
         m.forEach((key, value) -> putValue(key, value).setHandler(event -> {
         }));
-        cache.putAll(m);
     }
 
     @Override
     public void clear() {
         clearUp().setHandler(event -> {
         });
-        cache.clear();
     }
 
     @NotNull
@@ -199,6 +195,6 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.
     // TODO : removed it when consul cluster manager is more or less stable.
     private void printCache() {
-        vertx.setPeriodic(10000, handler -> log.trace("Internal cache: '{}'", Json.encodePrettily(cache)));
+        vertx.setPeriodic(10000, handler -> log.trace("Internal HaInfo (Sync) Map: '{}'", Json.encodePrettily(cache)));
     }
 }

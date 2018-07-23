@@ -72,6 +72,7 @@ public class NodeManager {
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
+        //checkConsulAgent();
         printLocalNodeMap();
 
     }
@@ -336,5 +337,16 @@ public class NodeManager {
 
     private void printLocalNodeMap() {
         vertx.setPeriodic(10000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
+    }
+
+    private void checkConsulAgent() {
+        vertx.setPeriodic(10000, event ->
+                consulClient.leaderStatus(leaderStatus -> {
+                    if (leaderStatus.succeeded()) {
+                        log.trace(leaderStatus.result());
+                    } else {
+                        log.error(leaderStatus.cause().toString());
+                    }
+                }));
     }
 }
