@@ -1,12 +1,14 @@
 package io.vertx.spi.cluster.consul;
 
-import io.vertx.spi.cluster.consul.suite.VertxNodeJoiningClusterTest;
+import io.vertx.spi.cluster.consul.suite.ConsulAsyncMapTest;
+import io.vertx.spi.cluster.consul.suite.ConsulAsyncMultiMapTest;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-        VertxNodeJoiningClusterTest.class
+        ConsulAsyncMapTest.class,
+        ConsulAsyncMultiMapTest.class
 })
 public class ConsulClusterManagerTestSuite {
 }

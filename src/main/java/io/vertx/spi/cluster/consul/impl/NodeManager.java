@@ -14,27 +14,32 @@ import io.vertx.ext.consul.*;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Main manager is accountable for:
  * <p>
- * - Node registration within the cluster. Every new consul service corresponds to new vertx node, ie - vertx.node maps to consul service.
+ * - Node registration within the cluster. Every new consul service corresponds to new vertx node, ie - mapping is: vertx.node <-> consul service. Don't confuse
+ * vertx node with consul (native) node - these are completely different things.
  * <p>
- * - Node discovery. Nodes discovery happens at the stage where new node is joining the cluster and then it discovers other nodes.
+ * - Node discovery. Nodes discovery happens at the stage where new node is joining the cluster and then it discovers other nodes (consul services).
  * <p>
- * - HaInfo pre-initialization. We need to pre-build haInfo map at the stage where new node is joining the cluster to be able later on to properly
+ * - HaInfo pre-initialization. We need to pre-build haInfo map at the "node is joining" stage to be able later on to properly
  * initialize the consul sync map. We can't block the event loop thread that gets the consul sync map. (Consul sync map holds haInfo.)
  * <p>
- * - Creating dummy TCP server to receive heart beats messages from consul.
+ * - Creating dummy TCP server to receive and acknowledge heart beats messages from consul.
  * <p>
- * - Creating TCP check that is to be mapped to ONLY vertx node (consul service).
+ * - Creating TCP check that is to be mapped to ONLY vertx node (consul service). TCP check "tells" consul agent to send heartbeat message to vertx nodes.
  * <p>
- * - Creating consul session. Consul session is used to make consul map entries ephemeral.
+ * - Creating consul session. Consul session is used to make consul map entries ephemeral (every entry with that is created with special KV options referencing session id gets automatically deleted
+ * from the consul cluster once session gets invalidated).
+ * In this cluster manager case session will get invalidated when:
+ * <li>health check gets unregistered.</li>
+ * <li>health check goes to critical state (when this.netserver doesn't acknowledge the consul's heartbeat message).</li>
+ * <li>session is explicitly destroyed.</li>
  *
  * @author Roman Levytskyi
  */
@@ -53,12 +58,14 @@ public class NodeManager {
     private final String checkId;
     private final String sessionName;
 
+    private NetServer netServer;
+
     // dedicated cache to keep session id where node id is the key. Consul session id used to lock map entries.
     private final Map<String, String> sessionCache = new ConcurrentHashMap<>();
     // dedicated cache to initialize and keep haInfo.
     private final Map haInfoMap = new ConcurrentHashMap<>();
     // local cache of all vertx cluster nodes.
-    private List<String> nodes;
+    private Set<String> nodes;
 
     public NodeManager(Vertx vertx,
                        ConsulClient consulClient,
@@ -72,7 +79,7 @@ public class NodeManager {
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
-        //checkConsulAgent();
+        watchNewNodes().start();
         printLocalNodeMap();
 
     }
@@ -88,7 +95,7 @@ public class NodeManager {
                 .compose(this::registerService)
                 .compose(this::registerTcpCheck)
                 .compose(aVoid -> registerSession())
-                .compose(aVoid -> discoverClusterNodes())
+                .compose(aVoid -> discoverNodes())
                 .compose(aVoid -> initHaInfo())
                 .setHandler(resultHandler);
     }
@@ -97,7 +104,7 @@ public class NodeManager {
      * @return available nodes in cluster.
      */
     public List<String> getNodes() {
-        return nodes;
+        return new ArrayList<>(nodes);
     }
 
     /**
@@ -118,31 +125,61 @@ public class NodeManager {
 
     /**
      * Listens for a new nodes within the cluster.
-     * <p>
-     * TODO: has to be re-implemented.
      */
-    public Watch listenForNewNodes() {
+    public Watch watchNewNodes() {
         // - tricky !!! watchers are always executed  within the event loop context !!!
         // - nodeAdded() call must NEVER be called within event loop context ???!!!.
-        return Watch.keyPrefix(ClusterManagerMaps.VERTX_NODES.getName(), vertx, consulClientOptions).setHandler(event -> {
+        return Watch.services(vertx, consulClientOptions).setHandler(event -> {
             if (event.succeeded()) {
                 vertx.executeBlocking(blockingEvent -> {
-                    // TODO: is filtering by this nodeId needed ?
-                    event.nextResult().getList().stream().map(KeyValue::getKey).forEach(newNodeId -> {
-                        log.trace("New node: '{}' has been discovered within the cluster.", newNodeId);
-                        nodes.add(newNodeId);
-                        if (nodeListener != null) {
-                            log.trace("Adding new node: '{}' to nodeListener.", newNodeId);
-                            nodeListener.nodeAdded(nodeId);
+                    synchronized (this) {
+                        ServiceList prevServiceList = event.prevResult();
+                        ServiceList nextServiceList = event.nextResult();
+                        // remove of the node (service) happens where next conditions are satisfied.
+
+
+
+                        if (prevServiceList != null && prevServiceList.getList() != null) {
+                            getNodeStream(prevServiceList.getList()).forEach(deletedNodeId -> {
+                                log.trace("Node: '{}' has left the cluster.", deletedNodeId);
+                                nodes.remove(deletedNodeId);
+                                if (nodeListener != null) {
+                                    log.trace("Removing : '{}' from local node listener.", deletedNodeId);
+                                    nodeListener.nodeLeft(deletedNodeId);
+                                }
+                            });
                         }
-                    });
-                    blockingEvent.complete();
+                        // adding nodes to local cache.
+                        if (event.nextResult() != null && event.nextResult().getList() != null) {
+                            getNodeStream(prevServiceList.getList()).forEach(newNodeId -> {
+                                log.trace("New node: '{}' has joined  the cluster.", newNodeId);
+                                nodes.add(newNodeId);
+                                if (nodeListener != null) {
+                                    log.trace("Adding new node: '{}' to nodeListener.", newNodeId);
+                                    nodeListener.nodeAdded(nodeId);
+                                }
+                            });
+
+                        }
+                        blockingEvent.complete();
+                    }
                 }, result -> {
                 });
             } else {
                 log.error("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, event.cause().getMessage());
             }
         });
+    }
+
+    /**
+     * Filters out only the services tagged with NODE_COMMON_TAG - vertx nodes within the cluster.
+     *
+     * @param services holds all the services available within the consul cluster.
+     * @return filtered stream by common tag containing vertx node ids.
+     */
+    private Stream<String> getNodeStream(List<Service> services) {
+        // TODO: is filtering by this nodeId needed ?
+        return services.stream().filter(service -> service.getTags().contains(NODE_COMMON_TAG)).map(Service::getName);
     }
 
     /**
@@ -160,7 +197,10 @@ public class NodeManager {
                 if (futureMap.result().getList() != null) {
                     // TODO : is casting here sufficient here ???
                     Map<K, V> collectedMap = futureMap.result().getList().stream().collect(Collectors.toMap(o -> (K) o.getKey(), o -> (V) o.getValue()));
-                    haInfoMap.remove(collectedMap);
+                    haInfoMap.putAll(collectedMap);
+                    log.trace("'{}' internal cache is pre-built now: '{}'", ClusterManagerMaps.VERTX_HA_INFO.getName(), Json.encodePrettily(haInfoMap));
+                } else {
+                    log.trace("'{}' seems to be empty.", ClusterManagerMaps.VERTX_HA_INFO.getName());
                 }
                 futureHaInfoCache.complete();
             } else {
@@ -189,6 +229,28 @@ public class NodeManager {
                 future.complete(tcpAddress);
             } else {
                 log.error("Node: '{}' failed to register due to: '{}'", future.cause().toString());
+                // closing the net server here.
+                netServer.close();
+                future.fail(event.cause());
+            }
+        });
+        return future;
+    }
+
+    /**
+     * Gets the vertx node de-registered from consul cluster.
+     *
+     * @return completed future if vertx node has been successfully de-registered from consul cluster, failed future - otherwise.
+     */
+    private Future<Void> deregisterService() {
+        Future<Void> future = Future.future();
+        consulClient.deregisterService(nodeId, event -> {
+            if (event.succeeded()) {
+                log.trace("'{}' has been unregistered.");
+                future.complete();
+            } else {
+                log.trace("Couldn't unregister service: '{}' due to: '{}'", nodeId, event.cause().toString());
+                future.fail(event.cause());
             }
         });
         return future;
@@ -218,9 +280,12 @@ public class NodeManager {
                 future.complete();
             } else {
                 log.trace("Can't register check: '{}' due to: '{}'", checkOptions.getId(), result.cause().toString());
+                // try to de-register the node from consul cluster
+                deregisterService();
                 future.fail(result.cause());
             }
         });
+
         return future;
     }
 
@@ -230,13 +295,13 @@ public class NodeManager {
      * @return completed future if nodes (consul services) have been successfully fetched from consul cluster,
      * failed future - otherwise.
      */
-    private Future<Void> discoverClusterNodes() {
+    private Future<Void> discoverNodes() {
         log.trace("Trying to fetch all the nodes that are available within the consul cluster.");
         Future<Void> futureNodes = Future.future();
         consulClient.catalogServices(result -> {
             if (result.succeeded()) {
                 if (result.result().getList() != null) {
-                    nodes = result.result().getList().stream().map(Service::getName).collect(Collectors.toList());
+                    nodes = getNodeStream(result.result().getList()).collect(Collectors.toSet());
                 }
                 log.trace("List of fetched nodes is: '{}'", nodes);
                 futureNodes.complete();
@@ -282,7 +347,7 @@ public class NodeManager {
      */
     private Future<TcpAddress> createTcpServer(final TcpAddress tcpAddress) {
         Future<TcpAddress> future = Future.future();
-        NetServer netServer = vertx.createNetServer(new NetServerOptions().setHost(tcpAddress.getHost()).setPort(tcpAddress.getPort()));
+        netServer = vertx.createNetServer(new NetServerOptions().setHost(tcpAddress.getHost()).setPort(tcpAddress.getPort()));
         netServer.connectHandler(event -> log.trace("Health heart beat message sent back to Consul"));
         netServer.listen(listenEvent -> {
             if (listenEvent.succeeded()) future.complete(tcpAddress);
@@ -292,7 +357,7 @@ public class NodeManager {
     }
 
     /**
-     * @return
+     * @return tcp address that later on gets exposed to acknowledge heartbeats messages from consul (tcp checker sends them).
      */
     private Future<TcpAddress> getTcpAddress() {
         Future<TcpAddress> futureTcp = Future.future();
@@ -337,16 +402,5 @@ public class NodeManager {
 
     private void printLocalNodeMap() {
         vertx.setPeriodic(10000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
-    }
-
-    private void checkConsulAgent() {
-        vertx.setPeriodic(10000, event ->
-                consulClient.leaderStatus(leaderStatus -> {
-                    if (leaderStatus.succeeded()) {
-                        log.trace(leaderStatus.result());
-                    } else {
-                        log.error(leaderStatus.cause().toString());
-                    }
-                }));
     }
 }

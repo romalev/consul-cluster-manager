@@ -18,21 +18,19 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 @RunWith(VertxUnitRunner.class)
-public class VertxNodeJoiningClusterTest {
+public class NodeJoinedTest {
 
     // slf4j
     static {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
 
-    private final Logger log = LoggerFactory.getLogger(VertxNodeJoiningClusterTest.class);
+    private final Logger log = LoggerFactory.getLogger(NodeJoinedTest.class);
 
     private ConsulAgent consulAgent = new ConsulAgent();
     private ConsulClientOptions consulClientOptions = new ConsulClientOptions()
@@ -43,8 +41,8 @@ public class VertxNodeJoiningClusterTest {
     private Supplier<Vertx> clusteredVertxSupplier = () -> {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Vertx> vertxAtomicReference = new AtomicReference<>();
-        VertxOptions vertxOptions = new VertxOptions();
-        vertxOptions.setClusterManager(consulClusterManager);
+        VertxOptions vertxOptions = new VertxOptions()
+                .setClusterManager(consulClusterManager);
         Vertx.clusteredVertx(vertxOptions, handler -> {
             if (handler.succeeded()) {
                 vertxAtomicReference.set(handler.result());
@@ -80,29 +78,14 @@ public class VertxNodeJoiningClusterTest {
 
     @Test
     public void verifyJoinOperation(TestContext testContext) {
-        testContext.async().complete();
+        //testContext.async().complete();
+        vertx.close(testContext.asyncAssertSuccess());
     }
 
 
     @After
     public void tearDown(TestContext testContext) {
         log.trace("Tearing down...");
-        CompletableFuture completableFuture = new CompletableFuture();
-        vertx.close(event -> {
-            if (event.succeeded()) completableFuture.complete(true);
-            else completableFuture.completeExceptionally(event.cause());
-        });
-
-        try {
-            completableFuture.get();
-        } catch (InterruptedException | ExecutionException e) {
-            log.error(e);
-            throw new VertxException(e);
-        } finally {
-            consulAgent.stop();
-            testContext.async().complete();
-        }
+        vertx.close(testContext.asyncAssertSuccess());
     }
-
-
 }

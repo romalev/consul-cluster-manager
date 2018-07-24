@@ -26,6 +26,6 @@ Note : Cluster managers do not handle the event bus inter-node transport, this i
 
 ***Implementation details***
 
-Current consul cluster manager implementation is fully based on [**vertx-consul-client**](https://vertx.io/docs/vertx-consul-client/java/) and [**vertx.core**](https://vertx.io/docs/vertx-core/java/).
+Current consul cluster manager implementation is fully based on [**vertx-consul-client**](https://vertx.io/docs/vertx-consul-client/java/) and [**vertx-core**](https://vertx.io/docs/vertx-core/java/).
 
 *Stay tuned!* 
