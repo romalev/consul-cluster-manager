@@ -53,12 +53,11 @@ public class NodeManager {
     private final Vertx vertx;
     private final ConsulClient consulClient;
     private final ConsulClientOptions consulClientOptions;
-    private final NodeListener nodeListener;
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
-
     private NetServer netServer;
+
 
     // dedicated cache to keep session id where node id is the key. Consul session id used to lock map entries.
     private final Map<String, String> sessionCache = new ConcurrentHashMap<>();
@@ -70,19 +69,16 @@ public class NodeManager {
     public NodeManager(Vertx vertx,
                        ConsulClient consulClient,
                        ConsulClientOptions consulClientOptions,
-                       NodeListener nodeListener,
                        String nodeId) {
         this.vertx = vertx;
         this.consulClient = consulClient;
         this.consulClientOptions = consulClientOptions;
-        this.nodeListener = nodeListener;
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
-        watchNewNodes().start();
         printLocalNodeMap();
-
     }
+
 
     /**
      * Asynchronously joins the vertx node with consul cluster.
@@ -123,43 +119,35 @@ public class NodeManager {
         return haInfoMap;
     }
 
+
     /**
      * Listens for a new nodes within the cluster.
      */
-    public Watch watchNewNodes() {
+    public Watch watchNewNodes(NodeListener nodeListener) {
         // - tricky !!! watchers are always executed  within the event loop context !!!
         // - nodeAdded() call must NEVER be called within event loop context ???!!!.
         return Watch.services(vertx, consulClientOptions).setHandler(event -> {
             if (event.succeeded()) {
                 vertx.executeBlocking(blockingEvent -> {
                     synchronized (this) {
-                        ServiceList prevServiceList = event.prevResult();
-                        ServiceList nextServiceList = event.nextResult();
-                        // remove of the node (service) happens where next conditions are satisfied.
-
-
-
-                        if (prevServiceList != null && prevServiceList.getList() != null) {
-                            getNodeStream(prevServiceList.getList()).forEach(deletedNodeId -> {
-                                log.trace("Node: '{}' has left the cluster.", deletedNodeId);
-                                nodes.remove(deletedNodeId);
+                        NodeWatchResult watchResult = getWatchResult(event.prevResult(), event.nextResult());
+                        if (watchResult.areNodesJoined()) {
+                            watchResult.getNodeIds().forEach(joinedNodeId -> {
+                                log.trace("New node: '{}' has joined  the cluster.", joinedNodeId);
+                                nodes.add(joinedNodeId);
                                 if (nodeListener != null) {
-                                    log.trace("Removing : '{}' from local node listener.", deletedNodeId);
-                                    nodeListener.nodeLeft(deletedNodeId);
-                                }
-                            });
-                        }
-                        // adding nodes to local cache.
-                        if (event.nextResult() != null && event.nextResult().getList() != null) {
-                            getNodeStream(prevServiceList.getList()).forEach(newNodeId -> {
-                                log.trace("New node: '{}' has joined  the cluster.", newNodeId);
-                                nodes.add(newNodeId);
-                                if (nodeListener != null) {
-                                    log.trace("Adding new node: '{}' to nodeListener.", newNodeId);
+                                    log.trace("Adding new node: '{}' to nodeListener.", joinedNodeId);
                                     nodeListener.nodeAdded(nodeId);
                                 }
                             });
-
+                        } else {
+                            watchResult.getNodeIds().forEach(leftNodeId -> {
+                                log.trace("Node: '{}' has left the cluster.", leftNodeId);
+                                nodes.remove(leftNodeId);
+                                if (nodeListener != null) {
+                                    log.trace("Removing an existing node: '{}' from nodeListener.", leftNodeId);
+                                }
+                            });
                         }
                         blockingEvent.complete();
                     }
@@ -169,6 +157,37 @@ public class NodeManager {
                 log.error("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, event.cause().getMessage());
             }
         });
+    }
+
+    /**
+     * Determines the result of watch operation i.e. whether new nodes have joined the cluster or existing nodes left the
+     * cluster.
+     * Based on prevServiceList and nextServiceList we can figure out which nodes have exactly joined or left the cluster.
+     *
+     * @param prevServiceList previous consul service list.
+     * @param nextServiceList next consul service list.
+     * @return dedicated node watch result holding boolean flag indicating whether node(s) has(ve) joined the cluster or left if + corresponding node(s) id(s).
+     */
+    private NodeWatchResult getWatchResult(ServiceList prevServiceList, ServiceList nextServiceList) {
+        if (((prevServiceList == null) || (prevServiceList.getList() == null)) && (nextServiceList != null) && (nextServiceList.getList() != null) && (nextServiceList.getList().size() > 0)) {
+            return new NodeWatchResult(true, getNodeStream(nextServiceList.getList()));
+        }
+        if (((nextServiceList == null) || (nextServiceList.getList() == null)) && (prevServiceList != null) && (prevServiceList.getList() != null) && (prevServiceList.getList().size() > 0)) {
+            return new NodeWatchResult(false, getNodeStream(prevServiceList.getList()));
+        }
+
+        if (prevServiceList != null && prevServiceList.getList() != null && nextServiceList != null && nextServiceList.getList() != null) {
+            List<String> filteredPrevList = getNodeStream(prevServiceList.getList()).collect(Collectors.toList());
+            List<String> filteredNextList = getNodeStream(nextServiceList.getList()).collect(Collectors.toList());
+            if (filteredNextList.size() > filteredPrevList.size()) {
+                filteredNextList.removeAll(filteredPrevList);
+                return new NodeWatchResult(true, filteredNextList.stream());
+            } else if (filteredPrevList.size() > filteredNextList.size()) {
+                filteredPrevList.removeAll(filteredNextList);
+                return new NodeWatchResult(false, filteredPrevList.stream());
+            }
+        }
+        return null;
     }
 
     /**
@@ -397,6 +416,27 @@ public class NodeManager {
                     "host='" + host + '\'' +
                     ", port=" + port +
                     '}';
+        }
+    }
+
+    /**
+     * Simple result holder of result of consul watch operation.
+     */
+    private final class NodeWatchResult {
+        private final boolean nodesJoined;
+        private Stream<String> nodeIds;
+
+        public NodeWatchResult(boolean nodesJoined, Stream<String> nodeIds) {
+            this.nodesJoined = nodesJoined;
+            this.nodeIds = nodeIds;
+        }
+
+        public boolean areNodesJoined() {
+            return nodesJoined;
+        }
+
+        public Stream<String> getNodeIds() {
+            return nodeIds;
         }
     }
 
