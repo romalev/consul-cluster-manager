@@ -9,8 +9,6 @@ enum ClusterManagerMaps {
 
     // contains ha info about every available node within the cluster.
     VERTX_HA_INFO("__vertx.haInfo"),
-    // contains node ids that are available within the cluster.
-    VERTX_NODES("__vertx.nodes"),
     // contains subscribers listening for events on event bus channels.
     VERTX_SUBS("__vertx.subs");
 

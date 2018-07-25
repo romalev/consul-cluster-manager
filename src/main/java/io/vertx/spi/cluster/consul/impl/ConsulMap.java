@@ -25,7 +25,7 @@ abstract class ConsulMap<K, V> {
     final String sessionId;
     final KeyValueOptions kvOptions;
 
-    private final EnumSet<ClusterManagerMaps> clusterManagerMaps = EnumSet.of(ClusterManagerMaps.VERTX_HA_INFO, ClusterManagerMaps.VERTX_NODES, ClusterManagerMaps.VERTX_SUBS);
+    private final EnumSet<ClusterManagerMaps> clusterManagerMaps = EnumSet.of(ClusterManagerMaps.VERTX_HA_INFO,ClusterManagerMaps.VERTX_SUBS);
 
     ConsulMap(ConsulClient consulClient, String name, String sessionId) {
         this.consulClient = consulClient;

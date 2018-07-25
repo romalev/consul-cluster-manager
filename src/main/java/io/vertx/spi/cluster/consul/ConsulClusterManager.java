@@ -44,7 +44,6 @@ public class ConsulClusterManager implements ClusterManager {
 
     private Vertx vertx;
     private ConsulClient consulClient;
-    private NodeListener nodeListener;
     private NodeManager nodeManager;
     private volatile boolean active;
 
@@ -71,7 +70,7 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("Injecting Vert.x instance and Initializing consul client ...");
         this.vertx = vertx;
         this.consulClient = ConsulClient.create(vertx, consulClientOptions);
-        this.nodeManager = new NodeManager(vertx, consulClient, consulClientOptions, nodeListener, nodeId);
+        this.nodeManager = new NodeManager(vertx, consulClient, consulClientOptions, nodeId);
     }
 
     /**
@@ -131,7 +130,7 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public void nodeListener(NodeListener listener) {
         log.trace("Initializing the node listener...");
-        this.nodeListener = listener;
+        nodeManager.watchNewNodes(listener).start();
     }
 
     @Override
