@@ -14,14 +14,23 @@ import java.util.*;
 import static io.vertx.spi.cluster.consul.impl.Utils.decode;
 
 /**
- * Distributed map implementation based on consul key-value store.
+ * Distributed sync map implementation based on consul key-value store.
+ * <p>
+ * Given implementation fully relies on internal cache (consul client doesn't have any cache built-in so we are sort of forced to come up with something custom)
+ * which essentially is {@link java.util.concurrent.ConcurrentHashMap}.
+ * Now:
+ * - cache read operations happens synchronously by simple reading from {@link java.util.concurrent.ConcurrentHashMap}.
+ * - cache write operations happens through consul watch that watches consul kv store updates
+ * (that's the only way we can apply to acknowledge successful write operation to consul kv store).
+ * <p>
+ * Note: given cache implementation MIGHT NOT BE mature enough to handle different sort of failures that might occur (hey, that's distributed systems world :))
  *
  * @author Roman Levytskyi
  */
 public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
 
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
-    // internal cache of consul KV store. it MUST ONLY BE updated by Consul watcher.
+
     private final Map<K, V> cache;
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
@@ -36,7 +45,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         this.vertx = vertx;
         this.consulClientOptions = consulClientOptions;
         this.cache = cache;
-        registerCacheWatcher();
+        watchHaInfoMap().start();
         printCache();
     }
 
@@ -68,30 +77,25 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     @Nullable
     @Override
     public V put(K key, V value) {
-        // don't block
-        putValue(key, value).setHandler(event -> {
-        });
+        putValue(key, value);
         return value;
     }
 
     @Override
     public V remove(Object key) {
-        removeValue((K) key).setHandler(event -> {
-        });
+        removeValue((K) key);
         return cache.get(key);
     }
 
     @Override
     public void putAll(Map<? extends K, ? extends V> m) {
         log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
-        m.forEach((key, value) -> putValue(key, value).setHandler(event -> {
-        }));
+        m.forEach(this::putValue);
     }
 
     @Override
     public void clear() {
-        clearUp().setHandler(event -> {
-        });
+        clearUp();
     }
 
     @NotNull
@@ -113,24 +117,49 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     }
 
     /**
-     * Watch registration. Watch has to be registered in order to keep the internal cache consistent and in sync with central
+     * Watches registration. Watch has to be registered in order to keep the internal cache consistent and in sync with central
      * Consul KV store. Watch listens to events that are coming from Consul KV store and updates the internal cache appropriately.
      */
-    private void registerCacheWatcher() {
-        Watch
-                .keyPrefix(name, vertx, consulClientOptions)
-                .setHandler(promise -> {
-                    if (promise.succeeded()) {
-                        // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache gets updated and in sync with Consul KV store.
-                        // TODO : is it correct to do so ? Investigate moore deeply how concurrent hash map handles concurrent writes
-                        synchronized (this) {
-                            log.trace("Watch for Consul KV store has been registered.");
-                            // TODO : more its are required to test this behaviour.
-                            KeyValueList prevKvList = promise.prevResult();
-                            KeyValueList nextKvList = promise.nextResult();
+    private Watch watchHaInfoMap() {
+        return Watch.keyPrefix(name, vertx, consulClientOptions).setHandler(promise -> {
+            if (promise.succeeded()) {
+                // We still need some sort of level synchronization on the internal cache since this is the entry point where the cache gets updated and in sync with Consul KV store.
+                // TODO : is it correct to do so ? Investigate moore deeply how concurrent hash map handles concurrent writes
+                synchronized (this) {
+                    log.trace("Watch for Consul KV store has been registered.");
+                    // TODO : more its are required to test this behaviour.
+                    KeyValueList prevKvList = promise.prevResult();
+                    KeyValueList nextKvList = promise.nextResult();
 
-                            if (Objects.isNull(prevKvList) && Objects.nonNull(nextKvList) && Objects.nonNull(nextKvList.getList())) {
-                                nextKvList.getList().forEach(keyValue -> {
+                    if (Objects.isNull(prevKvList) && Objects.nonNull(nextKvList) && Objects.nonNull(nextKvList.getList())) {
+                        nextKvList.getList().forEach(keyValue -> {
+                            String extractedKey = keyValue.getKey().replace(name + "/", "");
+                            log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
+                            try {
+                                cache.put((K) extractedKey, decode(keyValue.getValue()));
+                            } catch (Exception e) {
+                                throw new VertxException(e);
+                            }
+                        });
+                    } else if ((Objects.isNull(nextKvList) || Objects.isNull(nextKvList.getList()))) {
+                        log.trace("Clearing all cache since Consul KV store seems to be empty.");
+                        cache.clear();
+                    } else if (Objects.nonNull(prevKvList.getList()) && Objects.nonNull(nextKvList.getList())) {
+                        if (nextKvList.getList().size() == prevKvList.getList().size()) {
+                            nextKvList.getList().forEach(keyValue -> {
+                                String extractedKey = keyValue.getKey().replace(name + "/", "");
+                                log.trace("Updating the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
+                                try {
+                                    cache.put((K) extractedKey, decode(keyValue.getValue()));
+                                } catch (Exception e) {
+                                    throw new VertxException(e);
+                                }
+                            });
+                        } else if (nextKvList.getList().size() > prevKvList.getList().size()) {
+                            Set<KeyValue> nextS = new HashSet<>(nextKvList.getList());
+                            nextS.removeAll(new HashSet<>(prevKvList.getList()));
+                            if (!nextS.isEmpty()) {
+                                nextS.forEach(keyValue -> {
                                     String extractedKey = keyValue.getKey().replace(name + "/", "");
                                     log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
                                     try {
@@ -139,57 +168,29 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
                                         throw new VertxException(e);
                                     }
                                 });
-                            } else if ((Objects.isNull(nextKvList) || Objects.isNull(nextKvList.getList()))) {
-                                log.trace("Clearing all cache since Consul KV store seems to be empty.");
-                                cache.clear();
-                            } else if (Objects.nonNull(prevKvList.getList()) && Objects.nonNull(nextKvList.getList())) {
-                                if (nextKvList.getList().size() == prevKvList.getList().size()) {
-                                    nextKvList.getList().forEach(keyValue -> {
-                                        String extractedKey = keyValue.getKey().replace(name + "/", "");
-                                        log.trace("Updating the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
-                                        try {
-                                            cache.put((K) extractedKey, decode(keyValue.getValue()));
-                                        } catch (Exception e) {
-                                            throw new VertxException(e);
-                                        }
-                                    });
-                                } else if (nextKvList.getList().size() > prevKvList.getList().size()) {
-                                    Set<KeyValue> nextS = new HashSet<>(nextKvList.getList());
-                                    nextS.removeAll(new HashSet<>(prevKvList.getList()));
-                                    if (!nextS.isEmpty()) {
-                                        nextS.forEach(keyValue -> {
-                                            String extractedKey = keyValue.getKey().replace(name + "/", "");
-                                            log.trace("Adding the KV: '{}' -> '{}' to local cache.", extractedKey, keyValue.getValue());
-                                            try {
-                                                cache.put((K) extractedKey, decode(keyValue.getValue()));
-                                            } catch (Exception e) {
-                                                throw new VertxException(e);
-                                            }
-                                        });
+                            }
+                        } else {
+                            Set<KeyValue> prevS = new HashSet<>(prevKvList.getList());
+                            prevS.removeAll(new HashSet<>(nextKvList.getList()));
+                            if (!prevS.isEmpty()) {
+                                prevS.forEach(keyValue -> {
+                                    String extractedKey = keyValue.getKey().replace(name + "/", "");
+                                    log.trace("Removing the KV: '{}' -> '{}' from local cache.", extractedKey, keyValue.getValue());
+                                    try {
+                                        cache.put((K) extractedKey, decode(keyValue.getValue()));
+                                    } catch (Exception e) {
+                                        throw new VertxException(e);
                                     }
-                                } else {
-                                    Set<KeyValue> prevS = new HashSet<>(prevKvList.getList());
-                                    prevS.removeAll(new HashSet<>(nextKvList.getList()));
-                                    if (!prevS.isEmpty()) {
-                                        prevS.forEach(keyValue -> {
-                                            String extractedKey = keyValue.getKey().replace(name + "/", "");
-                                            log.trace("Removing the KV: '{}' -> '{}' from local cache.", extractedKey, keyValue.getValue());
-                                            try {
-                                                cache.put((K) extractedKey, decode(keyValue.getValue()));
-                                            } catch (Exception e) {
-                                                throw new VertxException(e);
-                                            }
-                                            cache.remove(extractedKey);
-                                        });
-                                    }
-                                }
+                                    cache.remove(extractedKey);
+                                });
                             }
                         }
-                    } else {
-                        log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
                     }
-                })
-                .start();
+                }
+            } else {
+                log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
+            }
+        });
     }
 
     // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.

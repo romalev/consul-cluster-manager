@@ -97,7 +97,6 @@ public class ConsulClusterManager implements ClusterManager {
         AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient, consulClientOptions, nodeManager.getSessionId()));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
-
     }
 
     @Override
