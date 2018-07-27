@@ -172,7 +172,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         log.trace("Calculating the size of: {}", this.name);
         Future<Integer> future = Future.future();
 
-        consulClient.getKeys(this.name, resultSizeHandler -> {
+        consulClient.getKeys(name, resultSizeHandler -> {
             if (resultSizeHandler.succeeded()) {
                 log.trace("Size of: '{}' is: '{}'", this.name, resultSizeHandler.result().size());
                 future.complete(resultSizeHandler.result().size());
@@ -194,7 +194,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         log.trace("Fetching all values from: {}", this.name);
         Future<List<V>> future = Future.future();
 
-        consulClient.getValues(this.name, resultHandler -> {
+        consulClient.getValues(name, resultHandler -> {
             if (resultHandler.succeeded()) {
                 List<String> values = resultHandler.result().getList().stream().map(KeyValue::getValue).collect(Collectors.toList());
                 log.trace("Vs: '{}' of: '{}'", values, this.name);
@@ -214,7 +214,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         // gets the entries of the map, asynchronously.
         Future<Map<K, V>> future = Future.future();
 
-        consulClient.getValues(this.name, resultHandler -> {
+        consulClient.getValues(name, resultHandler -> {
             if (resultHandler.succeeded()) {
                 Map<String, String> asyncMap = resultHandler.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
                 log.trace("Listing all entries within async KV store: '{}' is: '{}'", this.name, Json.encodePrettily(asyncMap));
