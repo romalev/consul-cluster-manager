@@ -25,12 +25,7 @@ import static io.vertx.spi.cluster.consul.impl.Utils.decode;
 import static io.vertx.spi.cluster.consul.impl.Utils.encode;
 
 /**
- * Distributed async multimap implementation based on consul key-value store.
- * <p>
- * TODO: 1) most of logging has to be removed when consul cluster manager is more or less stable.
- * TODO: 2) everything has to be documented in javadocs.
- * TODO: 3) Marshalling and unmarshalling.
- * TODO: 4) Some caching perhaps ???
+ * Distributed consul async multimap implementation.
  *
  * @author Roman Levytskyi
  */
@@ -68,7 +63,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                     } else {
                         aSet.add(v);
                         try {
-                            consulClient.putValue(consulKey, encode(aSet), resultHandler -> {
+                            consulClient.putValueWithOptions(consulKey, encode(aSet), kvOptions, resultHandler -> {
                                 if (resultHandler.succeeded()) {
                                     log.trace("KV: '{}'->'{}' has been added to Consul Async Multimap: '{}'.", consulKey, v.toString(), name);
                                     future.complete();

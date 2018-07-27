@@ -214,9 +214,16 @@ public class NodeManager {
         consulClient.getValues(ClusterManagerMaps.VERTX_HA_INFO.getName(), futureMap -> {
             if (futureMap.succeeded()) {
                 if (futureMap.result().getList() != null) {
-                    // TODO : is casting here sufficient here ???
-                    Map<K, V> collectedMap = futureMap.result().getList().stream().collect(Collectors.toMap(o -> (K) o.getKey(), o -> (V) o.getValue()));
-                    haInfoMap.putAll(collectedMap);
+                    futureMap.result().getList().forEach(keyValue -> {
+                        K key = (K) keyValue.getKey().replace(ClusterManagerMaps.VERTX_HA_INFO.getName() + "/", "");
+                        try {
+                            V value = Utils.decode(keyValue.getValue());
+                            haInfoMap.put(key, value);
+                        } catch (Exception e) {
+                            log.trace("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
+                            // don't throw any exceptions here - just ignore kv pair that can't be decoded.
+                        }
+                    });
                     log.trace("'{}' internal cache is pre-built now: '{}'", ClusterManagerMaps.VERTX_HA_INFO.getName(), Json.encodePrettily(haInfoMap));
                 } else {
                     log.trace("'{}' seems to be empty.", ClusterManagerMaps.VERTX_HA_INFO.getName());
