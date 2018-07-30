@@ -24,6 +24,7 @@ import java.util.stream.Stream;
  * <p>
  * - Node registration within the cluster. Every new consul service corresponds to new vertx node, ie - mapping is: vertx.node <-> consul service. Don't confuse
  * vertx node with consul (native) node - these are completely different things.
+ * IMPORTANT: every vetx nodes that joins the cluster IS AND MUST BE tagged with NODE_COMMON_TAG = "vertx-clustering".
  * <p>
  * - Node discovery. Nodes discovery happens at the stage where new node is joining the cluster and then it discovers other nodes (consul services).
  * <p>
@@ -49,7 +50,6 @@ public class NodeManager {
     private static final String TCP_CHECK_INTERVAL = "10s";
     private static final String NODE_COMMON_TAG = "vertx-clustering";
 
-
     private final Vertx vertx;
     private final ConsulClient consulClient;
     private final ConsulClientOptions consulClientOptions;
@@ -58,7 +58,6 @@ public class NodeManager {
     private final String sessionName;
     private NetServer netServer;
 
-
     // dedicated cache to keep session id where node id is the key. Consul session id used to lock map entries.
     private final Map<String, String> sessionCache = new ConcurrentHashMap<>();
     // dedicated cache to initialize and keep haInfo.
@@ -66,10 +65,7 @@ public class NodeManager {
     // local cache of all vertx cluster nodes.
     private Set<String> nodes;
 
-    public NodeManager(Vertx vertx,
-                       ConsulClient consulClient,
-                       ConsulClientOptions consulClientOptions,
-                       String nodeId) {
+    public NodeManager(Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String nodeId) {
         this.vertx = vertx;
         this.consulClient = consulClient;
         this.consulClientOptions = consulClientOptions;
@@ -197,7 +193,7 @@ public class NodeManager {
      * @return filtered stream by common tag containing vertx node ids.
      */
     private Stream<String> getNodeStream(List<Service> services) {
-        // TODO: is filtering by this nodeId needed ?
+        // TODO: is filtering by this [this] nodeId needed ?
         return services.stream().filter(service -> service.getTags().contains(NODE_COMMON_TAG)).map(Service::getName);
     }
 
@@ -246,6 +242,8 @@ public class NodeManager {
         Future<TcpAddress> future = Future.future();
         ServiceOptions serviceOptions = new ServiceOptions();
         serviceOptions.setName(nodeId);
+        serviceOptions.setAddress(tcpAddress.getHost());
+        serviceOptions.setPort(tcpAddress.getPort());
         serviceOptions.setTags(Arrays.asList(NODE_COMMON_TAG));
         serviceOptions.setId(nodeId);
 

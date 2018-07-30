@@ -63,7 +63,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                     } else {
                         aSet.add(v);
                         try {
-                            consulClient.putValueWithOptions(consulKey, encode(aSet), kvOptions, resultHandler -> {
+                            consulClient.putValueWithOptions(consulKey, encode(aSet), defaultKvOptions, resultHandler -> {
                                 if (resultHandler.succeeded()) {
                                     log.trace("KV: '{}'->'{}' has been added to Consul Async Multimap: '{}'.", consulKey, v.toString(), name);
                                     future.complete();

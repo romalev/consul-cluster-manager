@@ -8,14 +8,10 @@ import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.ext.consul.KeyValue;
+import io.vertx.ext.consul.*;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -56,35 +52,23 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void put(K k, V v, long ttl, Handler<AsyncResult<Void>> completionHandler) {
-        // TODO ttl
-        put(k, v, completionHandler);
+        getTtlSessionHandler(ttl)
+                .compose(id -> putValue(k, v, new KeyValueOptions().setAcquireSession(id)))
+                .setHandler(completionHandler);
     }
 
     @Override
     public void putIfAbsent(K k, V v, Handler<AsyncResult<V>> completionHandler) {
-        // puts the entry only if there is no entry with the key already present. If key already present then the existing
-        // value will be returned to the handler, otherwise null.
         log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV.", name, k, v);
-        getValue(k)
-                .compose(value -> {
-                    Future<V> future = Future.future();
-                    if (value == null) {
-                        putValue(k, v).setHandler(event -> {
-                            if (event.succeeded()) future.complete();
-                            else future.fail(event.cause());
-                        });
-
-                    } else {
-                        future.complete(v);
-                    }
-                    return future;
-                }).setHandler(completionHandler);
+        putIfAbsent(k, v, defaultKvOptions).setHandler(completionHandler);
     }
 
     @Override
     public void putIfAbsent(K k, V v, long ttl, Handler<AsyncResult<V>> completionHandler) {
-        // TODO ttl
-        putIfAbsent(k, v, completionHandler);
+        log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV with ttl", name, k, v, ttl);
+        getTtlSessionHandler(ttl)
+                .compose(sessionId -> putIfAbsent(k, v, new KeyValueOptions().setAcquireSession(sessionId)))
+                .setHandler(completionHandler);
     }
 
     @Override
@@ -108,7 +92,8 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
                         future.complete(false);
                     }
                     return future;
-                }).setHandler(resultHandler);
+                })
+                .setHandler(resultHandler);
     }
 
     @Override
@@ -198,6 +183,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
             if (resultHandler.succeeded()) {
                 List<String> values = resultHandler.result().getList().stream().map(KeyValue::getValue).collect(Collectors.toList());
                 log.trace("Vs: '{}' of: '{}'", values, this.name);
+                // FIXME : this is wrong.
                 future.complete((List<V>) values);
             } else {
                 log.error("Error occurred while fetching all the values from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
@@ -227,6 +213,68 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         });
 
         future.setHandler(asyncResultHandler);
+    }
+
+    /**
+     * Puts the entry only if there is no entry with the key already present. If key already present then the existing
+     * value will be returned to the handler, otherwise null.
+     *
+     * @param k               - holds the entry's key.
+     * @param v               - holds the entry's value.
+     * @param keyValueOptions - holds kv consul options.
+     * @return future existing value if k is already present, otherwise future null.
+     */
+    private Future<V> putIfAbsent(K k, V v, KeyValueOptions keyValueOptions) {
+        return getValue(k)
+                .compose(value -> {
+                    Future<V> future = Future.future();
+                    if (value == null) {
+                        putValue(k, v, keyValueOptions).setHandler(event -> {
+                            if (event.succeeded()) future.complete();
+                            else future.fail(event.cause());
+                        });
+                    } else {
+                        future.complete(v);
+                    }
+                    return future;
+                });
+    }
+
+    /**
+     * Creates TTL dedicated consul session. TTL on entries is handled by relaying on consul session itself.
+     * We have to register the session first it consul and then bound the session's id with entries we want to put ttl on.
+     *
+     * @param ttl - holds ttl in ms, this value must be between {@code 10s} and {@code 86400s} currently.
+     * @return session id.
+     */
+    private Future<String> getTtlSessionHandler(long ttl) {
+        if (ttl < 10000) {
+            log.warn("Specified ttl is less than allowed in consul -> min ttl is 10s.");
+            ttl = 10000;
+        }
+
+        if (ttl > 86400000) {
+            log.warn("Specified ttl is more that allowed in consul -> max ttl is 86400s.");
+            ttl = 86400000;
+        }
+
+        String sessionName = "ttlSession_" + UUID.randomUUID().toString();
+        Future<String> future = Future.future();
+        SessionOptions ttlSession = new SessionOptions()
+                .setTtl(TimeUnit.MILLISECONDS.toSeconds(ttl))
+                .setBehavior(SessionBehavior.DELETE)
+                .setName(sessionName);
+
+        consulClient.createSessionWithOptions(ttlSession, idHandler -> {
+            if (idHandler.succeeded()) {
+                log.trace("TTL session has been created with id: '{}'", idHandler.result());
+                future.complete(idHandler.result());
+            } else {
+                log.error("Failed to created ttl consul session due to: '{}'", idHandler.cause().toString());
+                future.fail(idHandler.cause());
+            }
+        });
+        return future;
     }
 
     // helper method used to print out periodically the async consul map.

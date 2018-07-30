@@ -152,7 +152,7 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("'{}' is trying to leave the cluster.", nodeId);
         if (active) {
             active = false;
-
+            // TODO: implement this!
         } else {
             log.warn("'{}' is NOT active.", nodeId);
             resultFuture.complete();

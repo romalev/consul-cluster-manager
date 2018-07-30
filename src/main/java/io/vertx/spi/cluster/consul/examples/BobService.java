@@ -14,14 +14,14 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 
-public class ServiceB {
+public class BobService {
 
     // slf4j
     static {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
 
-    private static final Logger log = LoggerFactory.getLogger(ServiceB.class);
+    private static final Logger log = LoggerFactory.getLogger(BobService.class);
     private static Vertx vertx;
 
 
