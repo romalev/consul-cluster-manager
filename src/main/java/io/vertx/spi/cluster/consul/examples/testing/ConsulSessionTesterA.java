@@ -46,7 +46,7 @@ public class ConsulSessionTesterA {
 
         ConsulSessionTesterA tester = new ConsulSessionTesterA();
 
-        tester.vertx.setPeriodic(5000, event -> {
+        tester.vertx.setPeriodic(15000, event -> {
             tester.consulClient.localChecks(localChecks -> {
                 List<Check> failedCheck = localChecks.result().stream().filter(check -> check.getStatus() == CheckStatus.CRITICAL).collect(Collectors.toList());
                 failedCheck.forEach(check -> {

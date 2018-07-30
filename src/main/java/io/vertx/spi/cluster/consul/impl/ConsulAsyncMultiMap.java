@@ -170,7 +170,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
     // helper method used to print out periodically the async consul map.
     private void printOutAsyncMultiMap() {
-        vertx.setPeriodic(10000, event -> consulClient.getValues(name, futureValues -> {
+        vertx.setPeriodic(15000, event -> consulClient.getValues(name, futureValues -> {
             if (futureValues.succeeded()) {
                 if (Objects.nonNull(futureValues.result()) && Objects.nonNull(futureValues.result().getList())) {
                     Map<String, String> asyncMap = futureValues.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));

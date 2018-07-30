@@ -37,7 +37,7 @@ public class AliceService {
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
-        vertxOptions.setEventLoopPoolSize(1);
+
         vertxOptions.setClusterManager(consulClusterManager);
 
         Vertx.clusteredVertx(vertxOptions, res -> {
@@ -69,7 +69,7 @@ public class AliceService {
                 vertx.sharedData().getAsyncMap("custom", result -> {
                     if (result.succeeded()) {
                         AsyncMap<Object, Object> asyncMap = result.result();
-                        asyncMap.putIfAbsent("Roman", "Lev", 20, completionHandler -> {
+                        asyncMap.put("Roman", "Lev", 20, completionHandler -> {
 
                         });
                     } else {

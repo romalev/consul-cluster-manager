@@ -446,6 +446,6 @@ public class NodeManager {
     }
 
     private void printLocalNodeMap() {
-        vertx.setPeriodic(10000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
+        vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
     }
 }

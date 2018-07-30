@@ -53,7 +53,8 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void put(K k, V v, long ttl, Handler<AsyncResult<Void>> completionHandler) {
-        getTtlSessionHandler(ttl)
+        assertKeyAndValueAreNotNull(k, v)
+                .compose(aVoid -> getTtlSessionHandler(ttl, k))
                 .compose(id -> putValue(k, v, new KeyValueOptions().setAcquireSession(id)))
                 .setHandler(completionHandler);
     }
@@ -67,7 +68,8 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     @Override
     public void putIfAbsent(K k, V v, long ttl, Handler<AsyncResult<V>> completionHandler) {
         log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV with ttl", name, k, v, ttl);
-        getTtlSessionHandler(ttl)
+        assertKeyAndValueAreNotNull(k, v)
+                .compose(aVoid -> getTtlSessionHandler(ttl, k))
                 .compose(sessionId -> putIfAbsent(k, v, new KeyValueOptions().setAcquireSession(sessionId)))
                 .setHandler(completionHandler);
     }
@@ -155,15 +157,15 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void size(Handler<AsyncResult<Integer>> resultHandler) {
-        log.trace("Calculating the size of: {}", this.name);
+        log.trace("Calculating the size of: {}", name);
         Future<Integer> future = Future.future();
 
         consulClient.getKeys(name, resultSizeHandler -> {
             if (resultSizeHandler.succeeded()) {
-                log.trace("Size of: '{}' is: '{}'", this.name, resultSizeHandler.result().size());
+                log.trace("Size of: '{}' is: '{}'", name, resultSizeHandler.result().size());
                 future.complete(resultSizeHandler.result().size());
             } else {
-                log.error("Error occurred while calculating the size of : '{}' due to: '{}'", this.name, resultSizeHandler.cause().toString());
+                log.error("Error occurred while calculating the size of : '{}' due to: '{}'", name, resultSizeHandler.cause().toString());
                 future.fail(resultSizeHandler.cause());
             }
         });
@@ -180,7 +182,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
                 log.trace("Ks: '{}' of: '{}'", keys, name);
                 future.complete(new HashSet<>(keys.stream().map(s -> (K) (s)).collect(Collectors.toList())));
             } else {
-                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
+                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", name, resultHandler.cause().toString());
                 future.fail(resultHandler.cause());
             }
         });
@@ -189,7 +191,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void values(Handler<AsyncResult<List<V>>> asyncResultHandler) {
-        log.trace("Fetching all values from: {}", this.name);
+        log.trace("Fetching all values from: {}", name);
         Future<List<V>> future = Future.future();
         consulClient.getValues(name, resultHandler -> {
             if (resultHandler.succeeded()) {
@@ -206,7 +208,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
                 log.trace("Vs: '{}' of: '{}'", values, name);
                 future.complete(values);
             } else {
-                log.error("Error occurred while fetching all the values from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
+                log.error("Error occurred while fetching all the values from: '{}' due to: '{}'", name, resultHandler.cause().toString());
                 future.fail(resultHandler.cause());
             }
         });
@@ -215,7 +217,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void entries(Handler<AsyncResult<Map<K, V>>> asyncResultHandler) {
-        log.trace("Fetching all entries from: {}", this.name);
+        log.trace("Fetching all entries from: {}", name);
         // gets the entries of the map, asynchronously.
         Future<Map<K, V>> future = Future.future();
         consulClient.getValues(name, resultHandler -> {
@@ -268,12 +270,12 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     /**
      * Creates TTL dedicated consul session. TTL on entries is handled by relaying on consul session itself.
-     * We have to register the session first it consul and then bound the session's id with entries we want to put ttl on.
+     * We have to register the session first in consul and then bound the session's id with entries we want to put ttl on.
      *
      * @param ttl - holds ttl in ms, this value must be between {@code 10s} and {@code 86400s} currently.
      * @return session id.
      */
-    private Future<String> getTtlSessionHandler(long ttl) {
+    private Future<String> getTtlSessionHandler(long ttl, K k) {
         if (ttl < 10000) {
             log.warn("Specified ttl is less than allowed in consul -> min ttl is 10s.");
             ttl = 10000;
@@ -284,7 +286,8 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
             ttl = 86400000;
         }
 
-        String sessionName = "ttlSession_" + UUID.randomUUID().toString();
+        String consulKey = getConsulKey(name, k);
+        String sessionName = "ttlSession_" + consulKey;
         Future<String> future = Future.future();
         SessionOptions ttlSession = new SessionOptions()
                 .setTtl(TimeUnit.MILLISECONDS.toSeconds(ttl))
@@ -313,6 +316,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     // helper method used to print out periodically the async consul map.
     private void printOutAsyncMap() {
-        vertx.setPeriodic(5000, event -> entries(Future.future()));
+        vertx.setPeriodic(15000, event -> entries(Future.future()));
     }
 }

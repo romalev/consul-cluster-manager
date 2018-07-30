@@ -44,7 +44,6 @@ public class BobService {
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
-        vertxOptions.setEventLoopPoolSize(1);
         vertxOptions.setClusterManager(consulClusterManager);
 
         Vertx.clusteredVertx(vertxOptions, res -> {
