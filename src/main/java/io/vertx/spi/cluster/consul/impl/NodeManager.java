@@ -209,10 +209,10 @@ public class NodeManager {
         Future<Void> futureHaInfoCache = Future.future();
         consulClient.getValues(ClusterManagerMaps.VERTX_HA_INFO.getName(), futureMap -> {
             if (futureMap.succeeded()) {
-                if (futureMap.result().getList() != null) {
+                if (futureMap.result() != null && futureMap.result().getList() != null) {
                     futureMap.result().getList().forEach(keyValue -> {
-                        K key = (K) keyValue.getKey().replace(ClusterManagerMaps.VERTX_HA_INFO.getName() + "/", "");
                         try {
+                            K key = (K) keyValue.getKey().replace(ClusterManagerMaps.VERTX_HA_INFO.getName() + "/", "");
                             V value = Utils.decode(keyValue.getValue());
                             haInfoMap.put(key, value);
                         } catch (Exception e) {

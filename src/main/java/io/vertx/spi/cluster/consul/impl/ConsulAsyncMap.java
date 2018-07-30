@@ -11,6 +11,7 @@ import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.*;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -171,26 +172,44 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void keys(Handler<AsyncResult<Set<K>>> asyncResultHandler) {
-        keys().setHandler(asyncResultHandler);
+        log.trace("Fetching all keys from: {}", name);
+        Future<Set<K>> future = Future.future();
+        consulClient.getKeys(name, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                List<String> keys = getListResult(resultHandler.result());
+                log.trace("Ks: '{}' of: '{}'", keys, name);
+                future.complete(new HashSet<>(keys.stream().map(s -> (K) (s)).collect(Collectors.toList())));
+            } else {
+                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
+                future.fail(resultHandler.cause());
+            }
+        });
+        future.setHandler(asyncResultHandler);
     }
 
     @Override
     public void values(Handler<AsyncResult<List<V>>> asyncResultHandler) {
         log.trace("Fetching all values from: {}", this.name);
         Future<List<V>> future = Future.future();
-
         consulClient.getValues(name, resultHandler -> {
             if (resultHandler.succeeded()) {
-                List<String> values = resultHandler.result().getList().stream().map(KeyValue::getValue).collect(Collectors.toList());
-                log.trace("Vs: '{}' of: '{}'", values, this.name);
-                // FIXME : this is wrong.
-                future.complete((List<V>) values);
+                List<KeyValue> list = getListResult(resultHandler.result());
+                List<V> values = new ArrayList<>();
+                list.forEach(keyValue -> {
+                    try {
+                        V value = Utils.decode(keyValue.getValue());
+                        values.add(value);
+                    } catch (Exception e) {
+                        log.error("Exception occurred while decoding value: '{}' due to: '{}'", keyValue.getValue(), e.getCause().toString());
+                    }
+                });
+                log.trace("Vs: '{}' of: '{}'", values, name);
+                future.complete(values);
             } else {
                 log.error("Error occurred while fetching all the values from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
                 future.fail(resultHandler.cause());
             }
         });
-
         future.setHandler(asyncResultHandler);
     }
 
@@ -199,19 +218,26 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         log.trace("Fetching all entries from: {}", this.name);
         // gets the entries of the map, asynchronously.
         Future<Map<K, V>> future = Future.future();
-
         consulClient.getValues(name, resultHandler -> {
             if (resultHandler.succeeded()) {
-                Map<String, String> asyncMap = resultHandler.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
-                log.trace("Listing all entries within async KV store: '{}' is: '{}'", this.name, Json.encodePrettily(asyncMap));
-                // FIXME : this is wrong.
-                future.complete((Map<K, V>) asyncMap);
+                List<KeyValue> list = getListResult(resultHandler.result());
+                Map<K, V> resultMap = new ConcurrentHashMap<>();
+                list.forEach(keyValue -> {
+                    try {
+                        K key = (K) keyValue.getKey();
+                        V value = Utils.decode(keyValue.getValue());
+                        resultMap.put(key, value);
+                    } catch (Exception e) {
+                        log.error("Exception occurred while decoding value: '{}' due to: '{}'", keyValue.getValue(), e.getCause().toString());
+                    }
+                });
+                log.trace("Listing all entries within async KV store: '{}' is: '{}'", name, Json.encodePrettily(resultHandler));
+                future.complete(resultMap);
             } else {
-                log.error("Failed to fetch all entries of async map '{}' due to : '{}'", this.name, resultHandler.cause().toString());
+                log.error("Failed to fetch all entries of async map '{}' due to : '{}'", name, resultHandler.cause().toString());
                 future.fail(resultHandler.cause());
             }
         });
-
         future.setHandler(asyncResultHandler);
     }
 
@@ -275,6 +301,14 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
             }
         });
         return future;
+    }
+
+    private <T> List<T> getListResult(List<T> list) {
+        return list == null ? Collections.emptyList() : list;
+    }
+
+    private List<KeyValue> getListResult(KeyValueList keyValueList) {
+        return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
     }
 
     // helper method used to print out periodically the async consul map.

@@ -57,7 +57,6 @@ public class ConsulClusterManager implements ClusterManager {
         Objects.requireNonNull(options, "Consul client options can't be null");
         this.consulClientOptions = options;
         this.nodeId = UUID.randomUUID().toString();
-
     }
 
     public ConsulClusterManager() {
