@@ -21,24 +21,22 @@ public class ConsulSessionTtlTesterA {
     private static ConsulClient consulClient = ConsulClient.create(vertx);
 
     public static void main(String[] args) {
-        registerSession()
-                .compose(ConsulSessionTtlTesterA::registerKv)
+
+        registerSession(10)
+                .compose(s -> registerKv(s, "Roman", "Lev"))
+                .compose(s -> registerKv(s, "Roman", "Updated"))
+                .compose(aVoid -> registerSession(30))
+                .compose(s -> registerKv(s, "Roman", "Lev1"))
                 .compose(aVoid -> {
-                    consulClient.getValue("Roman", resultHandler -> {
-                        if (resultHandler.succeeded()) {
-                            log.trace(resultHandler.result().getValue());
-                        }
-                    });
                     return Future.succeededFuture();
                 });
     }
 
-    private static Future<String> registerSession() {
+    private static Future<String> registerSession(int ttl) {
         Future<String> future = Future.future();
         SessionOptions sessionOptions = new SessionOptions()
-                .setTtl(30)
+                .setTtl(ttl)
                 .setName("testSession")
-
                 .setBehavior(SessionBehavior.DELETE);
 
         consulClient.createSessionWithOptions(sessionOptions, idHandler -> {
@@ -46,6 +44,7 @@ public class ConsulSessionTtlTesterA {
                 log.trace(idHandler.result());
                 future.complete(idHandler.result());
             } else {
+                log.trace(idHandler.cause().toString());
                 future.fail(idHandler.cause());
             }
 
@@ -53,13 +52,13 @@ public class ConsulSessionTtlTesterA {
         return future;
     }
 
-    private static Future<Void> registerKv(String sessionId) {
-        Future<Void> future = Future.future();
-        consulClient.putValueWithOptions("Roman", "Lev", new KeyValueOptions()
+    private static Future<String> registerKv(String sessionId, String key, String value) {
+        Future<String> future = Future.future();
+        consulClient.putValueWithOptions(key, value, new KeyValueOptions()
                 .setAcquireSession(sessionId), event -> {
             if (event.succeeded()) {
                 log.trace("entry has been registered.");
-                future.complete();
+                future.complete(sessionId);
             } else {
                 future.fail(event.cause());
             }

@@ -36,11 +36,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
 
-    public ConsulAsyncMultiMap(String name,
-                               Vertx vertx,
-                               ConsulClient consulClient,
-                               ConsulClientOptions consulClientOptions,
-                               String sessionId) {
+    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String sessionId) {
         super(consulClient, name, sessionId);
         this.vertx = vertx;
         this.consulClientOptions = consulClientOptions;

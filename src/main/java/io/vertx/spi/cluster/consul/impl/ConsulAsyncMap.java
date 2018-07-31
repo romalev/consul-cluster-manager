@@ -31,11 +31,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     private final Vertx vertx;
 
-    public ConsulAsyncMap(String name,
-                          Vertx vertx,
-                          ConsulClient consulClient,
-                          ConsulClientOptions consulClientOptions,
-                          String sessionId) {
+    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String sessionId) {
         super(consulClient, name, sessionId);
         this.vertx = vertx;
         printOutAsyncMap();
