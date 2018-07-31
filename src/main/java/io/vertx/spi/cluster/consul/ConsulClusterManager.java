@@ -57,7 +57,6 @@ public class ConsulClusterManager implements ClusterManager {
         Objects.requireNonNull(options, "Consul client options can't be null");
         this.consulClientOptions = options;
         this.nodeId = UUID.randomUUID().toString();
-
     }
 
     public ConsulClusterManager() {
@@ -152,7 +151,7 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("'{}' is trying to leave the cluster.", nodeId);
         if (active) {
             active = false;
-
+            // TODO: implement this!
         } else {
             log.warn("'{}' is NOT active.", nodeId);
             resultFuture.complete();

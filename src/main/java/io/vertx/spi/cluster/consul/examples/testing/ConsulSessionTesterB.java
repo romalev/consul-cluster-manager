@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.examples;
+package io.vertx.spi.cluster.consul.examples.testing;
 
 import io.vertx.core.*;
 import io.vertx.core.logging.Logger;
@@ -15,14 +15,14 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-public class ConsulSessionTesterA {
+public class ConsulSessionTesterB {
 
     // slf4j
     static {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
 
-    private static final Logger log = LoggerFactory.getLogger(ConsulSessionTesterA.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsulSessionTesterB.class);
 
     private String serviceName = UUID.randomUUID().toString();
     private Vertx vertx = Vertx.vertx(new VertxOptions().setEventLoopPoolSize(1));
@@ -44,9 +44,9 @@ public class ConsulSessionTesterA {
 
     public static void main(String[] args) throws InterruptedException {
 
-        ConsulSessionTesterA tester = new ConsulSessionTesterA();
+        ConsulSessionTesterB tester = new ConsulSessionTesterB();
 
-        tester.vertx.setPeriodic(5000, event -> {
+        tester.vertx.setPeriodic(15000, event -> {
             tester.consulClient.localChecks(localChecks -> {
                 List<Check> failedCheck = localChecks.result().stream().filter(check -> check.getStatus() == CheckStatus.CRITICAL).collect(Collectors.toList());
                 failedCheck.forEach(check -> {
@@ -60,31 +60,22 @@ public class ConsulSessionTesterA {
         });
 
         tester.run(event -> {
-            if (event.succeeded()) {
-                tester.consulClient.deleteValue("vertx/keyA3", res -> {
-                    if (res.succeeded()) {
-                        log.trace("KeyA3 -> value has gotten deleted.");
-                    }
-                });
 
-            }
         });
 
     }
 
     public void run(Handler<AsyncResult<Void>> resultHandler) {
-        createTcpServer()
-                .compose(aVoid -> registerService())
-                .compose(aVoid -> registerCheck())
+
+        registerCheck()
+                .compose(aVoid -> createTcpServer())
                 .compose(aBoolean -> registerSession())
-                .compose(s -> putSmthWithinConsulMap(s, "vertx/keyA1", "serviceA1"))
-                .compose(s -> putSmthWithinConsulMap(s, "vertx/keyA2", "serviceA2"))
-                .compose(aVoid -> registerNotifier())
+                .compose(this::putSmthWithinConsulMap)
                 .setHandler(resultHandler);
     }
 
 
-    private Future<Void> registerNotifier() {
+    private Future<Void> wath() {
         Future<Void> future = Future.future();
         Watch.keyPrefix("vertx", vertx).setHandler(event -> {
             if (event.succeeded()) {
@@ -114,21 +105,6 @@ public class ConsulSessionTesterA {
         return future;
     }
 
-    private Future<Void> registerService() {
-        Future<Void> future = Future.future();
-        ServiceOptions serviceOptions = new ServiceOptions();
-        serviceOptions.setName(serviceName);
-        serviceOptions.setId(serviceName);
-
-        consulClient.registerService(serviceOptions, event -> {
-            if (event.succeeded()) {
-                log.trace("service: {} has been registered.", serviceName);
-                future.complete();
-            }
-        });
-        return future;
-    }
-
     private Future<Void> registerCheck() {
         Future<Void> future = Future.future();
 
@@ -139,8 +115,6 @@ public class ConsulSessionTesterA {
         checkOptions.setTcp(host + ":" + port);
         checkOptions.setInterval("5s");
         checkOptions.setStatus(CheckStatus.PASSING);
-        checkOptions.setServiceId(serviceName);
-        checkOptions.setDeregisterAfter("10s");
 
 
         consulClient.registerCheck(checkOptions, res -> {
@@ -177,17 +151,20 @@ public class ConsulSessionTesterA {
         return future;
     }
 
-    private Future<String> putSmthWithinConsulMap(String sessionId, String key, String value) {
+    private Future<Void> putSmthWithinConsulMap(String sessionId) {
 
         KeyValueOptions keyValueOptions = new KeyValueOptions();
         keyValueOptions.setAcquireSession(sessionId);
 
-        Future<String> future = Future.future();
+        Future<Void> future = Future.future();
+        String key = "vertx/" + "keyB";
+        String value = "service B";
 
         consulClient.putValueWithOptions(key, value, keyValueOptions, res -> {
             if (res.succeeded()) {
                 log.trace("KV: '{}'->'{}' has been placed within consul map. Acquiring the lock on this key by session : {}", key, value, sessionId);
-                future.complete(sessionId);
+
+                future.complete();
             } else {
                 log.error("Can't place KV: '{}'->'{}' into consul map due to: {}", key, value, res.cause().toString());
                 future.fail(res.cause());

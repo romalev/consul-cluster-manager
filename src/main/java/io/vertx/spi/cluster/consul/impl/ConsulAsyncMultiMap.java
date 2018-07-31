@@ -36,11 +36,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
 
-    public ConsulAsyncMultiMap(String name,
-                               Vertx vertx,
-                               ConsulClient consulClient,
-                               ConsulClientOptions consulClientOptions,
-                               String sessionId) {
+    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String sessionId) {
         super(consulClient, name, sessionId);
         this.vertx = vertx;
         this.consulClientOptions = consulClientOptions;
@@ -63,7 +59,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                     } else {
                         aSet.add(v);
                         try {
-                            consulClient.putValueWithOptions(consulKey, encode(aSet), kvOptions, resultHandler -> {
+                            consulClient.putValueWithOptions(consulKey, encode(aSet), defaultKvOptions, resultHandler -> {
                                 if (resultHandler.succeeded()) {
                                     log.trace("KV: '{}'->'{}' has been added to Consul Async Multimap: '{}'.", consulKey, v.toString(), name);
                                     future.complete();
@@ -170,7 +166,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
     // helper method used to print out periodically the async consul map.
     private void printOutAsyncMultiMap() {
-        vertx.setPeriodic(10000, event -> consulClient.getValues(name, futureValues -> {
+        vertx.setPeriodic(15000, event -> consulClient.getValues(name, futureValues -> {
             if (futureValues.succeeded()) {
                 if (Objects.nonNull(futureValues.result()) && Objects.nonNull(futureValues.result().getList())) {
                     Map<String, String> asyncMap = futureValues.result().getList().stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));

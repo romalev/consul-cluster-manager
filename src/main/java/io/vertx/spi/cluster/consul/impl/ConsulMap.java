@@ -22,35 +22,31 @@ abstract class ConsulMap<K, V> {
 
     final ConsulClient consulClient;
     final String name;
-    final String sessionId;
-    final KeyValueOptions kvOptions;
+    final KeyValueOptions defaultKvOptions;
 
-    private final EnumSet<ClusterManagerMaps> clusterManagerMaps = EnumSet.of(ClusterManagerMaps.VERTX_HA_INFO,ClusterManagerMaps.VERTX_SUBS);
+    private final String sessionId;
+
+    private final EnumSet<ClusterManagerMaps> clusterManagerMaps = EnumSet.of(ClusterManagerMaps.VERTX_HA_INFO, ClusterManagerMaps.VERTX_SUBS);
 
     ConsulMap(ConsulClient consulClient, String name, String sessionId) {
         this.consulClient = consulClient;
         this.name = name;
         this.sessionId = sessionId;
-        this.kvOptions = clusterManagerMaps.contains(ClusterManagerMaps.fromString(name)) ? new KeyValueOptions().setAcquireSession(sessionId) : null;
+        this.defaultKvOptions = clusterManagerMaps.contains(ClusterManagerMaps.fromString(name)) ? new KeyValueOptions().setAcquireSession(sessionId) : null;
     }
 
     Future<Void> putValue(K k, V v) {
         log.trace("'{}' - trying to put KV: '{}'->'{}' CKV.", name, k, v);
         return assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> encodeInFuture(v))
-                .compose(value -> {
-                    Future<Void> future = Future.future();
-                    consulClient.putValueWithOptions(getConsulKey(name, k), value, kvOptions, resultHandler -> {
-                        if (resultHandler.succeeded()) {
-                            log.trace("'{}'- KV: '{}'->'{}' has been put to CKV.", name, k.toString(), v.toString());
-                            future.complete();
-                        } else {
-                            log.error("'{}' - Can't put KV: '{}'->'{}' to CKV due to: '{}'", name, k.toString(), v.toString(), future.cause().toString());
-                            future.fail(resultHandler.cause());
-                        }
-                    });
-                    return future;
-                });
+                .compose(value -> putValueWithOptions(getConsulKey(name, k), value, defaultKvOptions));
+    }
+
+    Future<Void> putValue(K k, V v, KeyValueOptions keyValueOptions) {
+        log.trace("'{}' - trying to put KV: '{}'->'{}' CKV.", name, k, v);
+        return assertKeyAndValueAreNotNull(k, v)
+                .compose(aVoid -> encodeInFuture(v))
+                .compose(value -> putValueWithOptions(getConsulKey(name, k), value, keyValueOptions));
     }
 
     Future<V> removeValue(K k) {
@@ -115,23 +111,6 @@ abstract class ConsulMap<K, V> {
         return future;
     }
 
-    Future<Set<K>> keys() {
-        log.trace("Fetching all keys from: {}", this.name);
-        Future<Set<K>> future = Future.future();
-        consulClient.getKeys(this.name, resultHandler -> {
-            if (resultHandler.succeeded()) {
-                log.trace("Ks: '{}' of: '{}'", resultHandler.result(), this.name);
-                // FIXME
-                future.complete(new HashSet<>((List<K>) resultHandler.result()));
-            } else {
-                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", this.name, resultHandler.cause().toString());
-                future.fail(resultHandler.cause());
-            }
-        });
-        return future;
-    }
-
-
     /**
      * Verifies whether value is not null.
      */
@@ -159,5 +138,19 @@ abstract class ConsulMap<K, V> {
 
     String getConsulKey(String name, K k) {
         return name + "/" + k.toString();
+    }
+
+    private Future<Void> putValueWithOptions(String key, String value, KeyValueOptions keyValueOptions) {
+        Future<Void> future = Future.future();
+        consulClient.putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                log.trace("'{}'- KV: '{}'->'{}' has been put to CKV.", name, key, value);
+                future.complete();
+            } else {
+                log.error("'{}' - Can't put KV: '{}'->'{}' to CKV due to: '{}'", name, key, value, future.cause().toString());
+                future.fail(resultHandler.cause());
+            }
+        });
+        return future;
     }
 }
