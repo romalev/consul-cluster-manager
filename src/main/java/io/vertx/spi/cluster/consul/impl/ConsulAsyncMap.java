@@ -15,13 +15,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
+
 /**
  * Distributed async map implementation based on consul key-value store.
  * <p>
- * TODO: 1) most of logging has to be removed when consul cluster manager is more or less stable.
- * TODO: 2) everything has to be documented in javadocs.
- * TODO: 3) Marshalling and unmarshalling.
- * TODO: 4) Some caching perhaps ???
+ * Note: given map is used in vertx shared data - it is used by vertx nodes to share the data, entries of this map are always PERSISTENT not EPHEMERAL.
  *
  * @author Roman Levytskyi
  */
@@ -30,10 +29,12 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
     private final Vertx vertx;
+    private final ConsulClientOptions cCOptions;
 
-    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String sessionId) {
-        super(consulClient, name, sessionId);
+    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC, ConsulClientOptions cCOptions) {
+        super(name, cC);
         this.vertx = vertx;
+        this.cCOptions = cCOptions;
         printOutAsyncMap();
     }
 
@@ -44,7 +45,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void put(K k, V v, Handler<AsyncResult<Void>> completionHandler) {
-        putValue(k, v).setHandler(completionHandler);
+        putValue(k, v)
+                .compose(aBoolean -> aBoolean ? Future.succeededFuture() : Future.<Void>failedFuture(k.toString() + "wasn't put to " + name))
+                .setHandler(completionHandler);
     }
 
     @Override
@@ -52,13 +55,14 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> getTtlSessionHandler(ttl, k))
                 .compose(id -> putValue(k, v, new KeyValueOptions().setAcquireSession(id)))
+                .compose(aBoolean -> aBoolean ? Future.succeededFuture() : Future.<Void>failedFuture(k.toString() + "wasn't put to " + name))
                 .setHandler(completionHandler);
     }
 
     @Override
     public void putIfAbsent(K k, V v, Handler<AsyncResult<V>> completionHandler) {
         log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV.", name, k, v);
-        putIfAbsent(k, v, defaultKvOptions).setHandler(completionHandler);
+        putIfAbsent(k, v, Optional.empty()).setHandler(completionHandler);
     }
 
     @Override
@@ -66,7 +70,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV with ttl", name, k, v, ttl);
         assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> getTtlSessionHandler(ttl, k))
-                .compose(sessionId -> putIfAbsent(k, v, new KeyValueOptions().setAcquireSession(sessionId)))
+                .compose(sessionId -> putIfAbsent(k, v, Optional.of(sessionId)))
                 .setHandler(completionHandler);
     }
 
@@ -83,9 +87,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
                 .compose(value -> {
                     Future<Boolean> future = Future.future();
                     if (v.equals(value)) {
-                        remove(k, event -> {
-                            if (event.succeeded()) future.complete(true);
-                            else future.fail(event.cause());
+                        consulClient.deleteValue(getConsulKey(name, k), res -> {
+                            if (res.succeeded()) future.complete(true);
+                            else future.fail(res.cause());
                         });
                     } else {
                         future.complete(false);
@@ -100,15 +104,15 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         // replaces the entry only if it is currently mapped to some value.
         log.trace("'{}' - replacing an entry with K: '{}' by new V: '{}'.", name, k, v);
         getValue(k)
-                .compose(receivedValue -> {
+                .compose(curV -> {
                     Future<V> newValueFuture = Future.future();
-                    if (receivedValue != null) {
-                        put(k, receivedValue, event -> {
-                            if (event.succeeded()) newValueFuture.complete(receivedValue);
+                    if (curV == null) {
+                        newValueFuture.complete();
+                    } else {
+                        put(k, v, event -> {
+                            if (event.succeeded()) newValueFuture.complete(v);
                             else newValueFuture.fail(event.cause());
                         });
-                    } else {
-                        newValueFuture.complete();
                     }
                     return newValueFuture;
                 })
@@ -118,12 +122,13 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     @Override
     public void replaceIfPresent(K k, V oldValue, V newValue, Handler<AsyncResult<Boolean>> resultHandler) {
         // replaces the entry only if it is currently mapped to a specific value.
-        assertValueIsNotNull(oldValue)
+        assertValueIsNotNull(newValue)
+                .compose(aVoid -> assertValueIsNotNull(oldValue))
                 .compose(aVoid -> getValue(k))
-                .compose(value -> {
+                .compose(curV -> {
                     Future<Boolean> future = Future.future();
-                    if (Objects.nonNull(value)) {
-                        if (value.equals(oldValue)) {
+                    if (curV != null) {
+                        if (curV.equals(oldValue)) {
                             put(k, newValue, resultPutHandler -> {
                                 if (resultPutHandler.succeeded()) {
                                     log.trace("Old V: '{}' has been replaced by new V: '{}' where K: '{}'", oldValue, newValue, k);
@@ -134,7 +139,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
                                 }
                             });
                         } else {
-                            log.trace("An entry with K: '{}' doesn't map to old V: '{}' so it wo'nt get replaced.", k, oldValue);
+                            log.trace("An entry with K: '{}' doesn't map to old V: '{}' so it won't get replaced.", k, oldValue);
                             future.complete(false);
                         }
                     } else {
@@ -154,111 +159,84 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     @Override
     public void size(Handler<AsyncResult<Integer>> resultHandler) {
         log.trace("Calculating the size of: {}", name);
-        Future<Integer> future = Future.future();
-
-        consulClient.getKeys(name, resultSizeHandler -> {
-            if (resultSizeHandler.succeeded()) {
-                log.trace("Size of: '{}' is: '{}'", name, resultSizeHandler.result().size());
-                future.complete(resultSizeHandler.result().size());
-            } else {
-                log.error("Error occurred while calculating the size of : '{}' due to: '{}'", name, resultSizeHandler.cause().toString());
-                future.fail(resultSizeHandler.cause());
-            }
-        });
-        future.setHandler(resultHandler);
+        consulKeys().compose(list -> Future.succeededFuture(list.size())).setHandler(resultHandler);
     }
 
     @Override
     public void keys(Handler<AsyncResult<Set<K>>> asyncResultHandler) {
         log.trace("Fetching all keys from: {}", name);
-        Future<Set<K>> future = Future.future();
-        consulClient.getKeys(name, resultHandler -> {
-            if (resultHandler.succeeded()) {
-                List<String> keys = getListResult(resultHandler.result());
-                log.trace("Ks: '{}' of: '{}'", keys, name);
-                future.complete(new HashSet<>(keys.stream().map(s -> (K) (s)).collect(Collectors.toList())));
-            } else {
-                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", name, resultHandler.cause().toString());
-                future.fail(resultHandler.cause());
-            }
-        });
-        future.setHandler(asyncResultHandler);
+        consulKeys().compose(list -> Future.succeededFuture(list.stream().map(s -> (K) s).collect(Collectors.toSet()))).setHandler(asyncResultHandler);
     }
 
     @Override
     public void values(Handler<AsyncResult<List<V>>> asyncResultHandler) {
         log.trace("Fetching all values from: {}", name);
-        Future<List<V>> future = Future.future();
-        consulClient.getValues(name, resultHandler -> {
-            if (resultHandler.succeeded()) {
-                List<KeyValue> list = getListResult(resultHandler.result());
-                List<V> values = new ArrayList<>();
-                list.forEach(keyValue -> {
-                    try {
-                        V value = Utils.decode(keyValue.getValue());
-                        values.add(value);
-                    } catch (Exception e) {
-                        log.error("Exception occurred while decoding value: '{}' due to: '{}'", keyValue.getValue(), e.getCause().toString());
-                    }
-                });
-                log.trace("Vs: '{}' of: '{}'", values, name);
-                future.complete(values);
-            } else {
-                log.error("Error occurred while fetching all the values from: '{}' due to: '{}'", name, resultHandler.cause().toString());
-                future.fail(resultHandler.cause());
-            }
-        });
-        future.setHandler(asyncResultHandler);
+        consulEntries()
+                .compose(keyValueList -> {
+                    Future<List<V>> future = Future.future();
+                    List<KeyValue> list = getListResult(keyValueList);
+                    List<V> values = new ArrayList<>();
+                    list.forEach(keyValue -> {
+                        try {
+                            V value = decode(keyValue.getValue());
+                            values.add(value);
+                        } catch (Exception e) {
+                            log.error("Exception occurred while decoding value: '{}' due to: '{}'", keyValue.getValue(), e.getCause().toString());
+                        }
+                    });
+                    log.trace("Vs: '{}' of: '{}'", values, name);
+                    future.complete(values);
+                    return future;
+                })
+                .setHandler(asyncResultHandler);
     }
 
     @Override
     public void entries(Handler<AsyncResult<Map<K, V>>> asyncResultHandler) {
         log.trace("Fetching all entries from: {}", name);
         // gets the entries of the map, asynchronously.
-        Future<Map<K, V>> future = Future.future();
-        consulClient.getValues(name, resultHandler -> {
-            if (resultHandler.succeeded()) {
-                List<KeyValue> list = getListResult(resultHandler.result());
-                Map<K, V> resultMap = new ConcurrentHashMap<>();
-                list.forEach(keyValue -> {
-                    try {
-                        K key = (K) keyValue.getKey();
-                        V value = Utils.decode(keyValue.getValue());
-                        resultMap.put(key, value);
-                    } catch (Exception e) {
-                        log.error("Exception occurred while decoding value: '{}' due to: '{}'", keyValue.getValue(), e.getCause().toString());
-                    }
-                });
-                log.trace("Listing all entries within async KV store: '{}' is: '{}'", name, Json.encodePrettily(resultHandler));
-                future.complete(resultMap);
-            } else {
-                log.error("Failed to fetch all entries of async map '{}' due to : '{}'", name, resultHandler.cause().toString());
-                future.fail(resultHandler.cause());
-            }
-        });
-        future.setHandler(asyncResultHandler);
+        consulEntries()
+                .compose(keyValueList -> {
+                    Future<Map<K, V>> future = Future.future();
+                    List<KeyValue> list = getListResult(keyValueList);
+                    Map<K, V> resultMap = new ConcurrentHashMap<>();
+                    list.forEach(keyValue -> {
+                        try {
+                            K key = (K) keyValue.getKey();
+                            V value = decode(keyValue.getValue());
+                            resultMap.put(key, value);
+                        } catch (Exception e) {
+                            log.error("Exception occurred while decoding value: '{}' due to: '{}'", keyValue.getValue(), e.getCause().toString());
+                        }
+                    });
+                    log.trace("Listing all entries within async KV store: '{}' is: '{}'", name, Json.encodePrettily(resultMap));
+                    future.complete(resultMap);
+                    return future;
+                })
+                .setHandler(asyncResultHandler);
     }
 
     /**
      * Puts the entry only if there is no entry with the key already present. If key already present then the existing
      * value will be returned to the handler, otherwise null.
      *
-     * @param k               - holds the entry's key.
-     * @param v               - holds the entry's value.
-     * @param keyValueOptions - holds kv consul options.
+     * @param k         - holds the entry's key.
+     * @param v         - holds the entry's value.
+     * @param sessionId - holds the ttl session id.
      * @return future existing value if k is already present, otherwise future null.
      */
-    private Future<V> putIfAbsent(K k, V v, KeyValueOptions keyValueOptions) {
-        return getValue(k)
-                .compose(value -> {
-                    Future<V> future = Future.future();
-                    if (value == null) {
-                        putValue(k, v, keyValueOptions).setHandler(event -> {
-                            if (event.succeeded()) future.complete();
-                            else future.fail(event.cause());
-                        });
+    private Future<V> putIfAbsent(K k, V v, Optional<String> sessionId) {
+        // specifies to use a Check-And-Set operation: if the index is 0, Consul will only put the key if it does not already exist.
+        KeyValueOptions casOpts = new KeyValueOptions().setCasIndex(0);
+        sessionId.ifPresent(casOpts::setAcquireSession);
+        return putValue(k, v, casOpts)
+                .compose(aBoolean -> {
+                    Future<V> future = Future.succeededFuture();
+                    if (aBoolean) {
+                        future.complete();
                     } else {
-                        future.complete(v);
+                        // key already present
+                        get(k, future.completer());
                     }
                     return future;
                 });
@@ -300,14 +278,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
             }
         });
         return future;
-    }
-
-    private <T> List<T> getListResult(List<T> list) {
-        return list == null ? Collections.emptyList() : list;
-    }
-
-    private List<KeyValue> getListResult(KeyValueList keyValueList) {
-        return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
     }
 
     // helper method used to print out periodically the async consul map.

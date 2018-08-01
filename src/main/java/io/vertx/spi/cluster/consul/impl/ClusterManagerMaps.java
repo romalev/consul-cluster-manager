@@ -10,17 +10,14 @@ enum ClusterManagerMaps {
     // contains ha info about every available node within the cluster.
     VERTX_HA_INFO("__vertx.haInfo"),
     // contains subscribers listening for events on event bus channels.
-    VERTX_SUBS("__vertx.subs");
-
+    VERTX_SUBS("__vertx.subs"),
+    // contains node's distributed counters.
+    VERTX_COUNTERS("__vertx.counters");
 
     private String name;
 
     ClusterManagerMaps(String name) {
         this.name = name;
-    }
-
-    public String getName() {
-        return name;
     }
 
     public static ClusterManagerMaps fromString(String text) {
@@ -30,5 +27,9 @@ enum ClusterManagerMaps {
             }
         }
         return null;
+    }
+
+    public String getName() {
+        return name;
     }
 }

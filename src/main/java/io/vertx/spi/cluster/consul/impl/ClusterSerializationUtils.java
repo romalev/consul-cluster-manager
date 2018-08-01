@@ -9,19 +9,33 @@ import java.lang.reflect.Constructor;
 import java.util.Base64;
 
 /**
- * Dedicated utility to marshal incoming objects into strings and un-marshal incoming strings into objects.
+ * Dedicated utility to marshal objects into strings and un-marshal strings into objects.
  *
  * @author Roman Levytskyi.
  */
-class Utils {
+class ClusterSerializationUtils {
 
-    static Future<String> encodeInFuture(Object object) {
+    static Future<String> encodeF(Object object) {
         Future<String> future = Future.future();
         try {
             String result = encode(object);
             future.complete(result);
         } catch (IOException e) {
             future.fail(e.getCause());
+        }
+        return future;
+    }
+
+    static <T> Future<T> decodeF(String bytes) {
+        Future<T> future = Future.future();
+        try {
+            if (bytes == null) {
+                future.complete();
+            } else {
+                future.complete(decode(bytes));
+            }
+        } catch (Exception e) {
+            future.fail(e);
         }
         return future;
     }
@@ -44,7 +58,7 @@ class Utils {
     /**
      * Marshals (encodes) an object to bytes[].
      */
-    static byte[] asByte(Object object) throws IOException {
+    static private byte[] asByte(Object object) throws IOException {
         ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
         DataOutput dataOutput = new DataOutputStream(byteOut);
         if (object instanceof ClusterSerializable) {
@@ -69,7 +83,7 @@ class Utils {
     /**
      * Unmarshals (decodes) bytes[] to object.
      */
-    static <T> T asObject(byte[] bytes) throws Exception {
+    static private <T> T asObject(byte[] bytes) throws Exception {
         ByteArrayInputStream byteIn = new ByteArrayInputStream(bytes);
         DataInputStream in = new DataInputStream(byteIn);
         boolean isClusterSerializable = in.readBoolean();

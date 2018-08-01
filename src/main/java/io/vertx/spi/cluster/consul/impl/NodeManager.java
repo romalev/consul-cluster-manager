@@ -56,12 +56,11 @@ public class NodeManager {
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
-    private NetServer netServer;
-
     // dedicated cache to keep session id where node id is the key. Consul session id used to lock map entries.
     private final Map<String, String> sessionCache = new ConcurrentHashMap<>();
     // dedicated cache to initialize and keep haInfo.
     private final Map haInfoMap = new ConcurrentHashMap<>();
+    private NetServer netServer;
     // local cache of all vertx cluster nodes.
     private Set<String> nodes;
 
@@ -165,36 +164,30 @@ public class NodeManager {
      * @return dedicated node watch result holding boolean flag indicating whether node(s) has(ve) joined the cluster or left if + corresponding node(s) id(s).
      */
     private NodeWatchResult getWatchResult(ServiceList prevServiceList, ServiceList nextServiceList) {
-        if (((prevServiceList == null) || (prevServiceList.getList() == null)) && (nextServiceList != null) && (nextServiceList.getList() != null) && (nextServiceList.getList().size() > 0)) {
-            return new NodeWatchResult(true, getNodeStream(nextServiceList.getList()));
-        }
-        if (((nextServiceList == null) || (nextServiceList.getList() == null)) && (prevServiceList != null) && (prevServiceList.getList() != null) && (prevServiceList.getList().size() > 0)) {
-            return new NodeWatchResult(false, getNodeStream(prevServiceList.getList()));
-        }
+        List<String> prevList = getNodeStream(prevServiceList).collect(Collectors.toList());
+        List<String> nextList = getNodeStream(nextServiceList).collect(Collectors.toList());
 
-        if (prevServiceList != null && prevServiceList.getList() != null && nextServiceList != null && nextServiceList.getList() != null) {
-            List<String> filteredPrevList = getNodeStream(prevServiceList.getList()).collect(Collectors.toList());
-            List<String> filteredNextList = getNodeStream(nextServiceList.getList()).collect(Collectors.toList());
-            if (filteredNextList.size() > filteredPrevList.size()) {
-                filteredNextList.removeAll(filteredPrevList);
-                return new NodeWatchResult(true, filteredNextList.stream());
-            } else if (filteredPrevList.size() > filteredNextList.size()) {
-                filteredPrevList.removeAll(filteredNextList);
-                return new NodeWatchResult(false, filteredPrevList.stream());
-            }
+        if (nextList.size() > prevList.size()) {
+            nextList.removeAll(prevList);
+            return new NodeWatchResult(true, nextList.stream());
+        } else if (nextList.size() < prevList.size()) {
+            prevList.removeAll(nextList);
+            return new NodeWatchResult(false, nextList.stream());
+        } else {
+            // theoretically this should never happen.
+            return new NodeWatchResult(true, Stream.empty());
         }
-        return null;
     }
 
     /**
      * Filters out only the services tagged with NODE_COMMON_TAG - vertx nodes within the cluster.
      *
-     * @param services holds all the services available within the consul cluster.
+     * @param serviceList holds all the services available within the consul cluster.
      * @return filtered stream by common tag containing vertx node ids.
      */
-    private Stream<String> getNodeStream(List<Service> services) {
+    private Stream<String> getNodeStream(ServiceList serviceList) {
         // TODO: is filtering by this [this] nodeId needed ?
-        return services.stream().filter(service -> service.getTags().contains(NODE_COMMON_TAG)).map(Service::getName);
+        return serviceList == null || serviceList.getList() == null ? Stream.empty() : serviceList.getList().stream().filter(service -> service.getTags().contains(NODE_COMMON_TAG)).map(Service::getName);
     }
 
     /**
@@ -213,7 +206,7 @@ public class NodeManager {
                     futureMap.result().getList().forEach(keyValue -> {
                         try {
                             K key = (K) keyValue.getKey().replace(ClusterManagerMaps.VERTX_HA_INFO.getName() + "/", "");
-                            V value = Utils.decode(keyValue.getValue());
+                            V value = ClusterSerializationUtils.decode(keyValue.getValue());
                             haInfoMap.put(key, value);
                         } catch (Exception e) {
                             log.trace("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
@@ -324,9 +317,7 @@ public class NodeManager {
         Future<Void> futureNodes = Future.future();
         consulClient.catalogServices(result -> {
             if (result.succeeded()) {
-                if (result.result().getList() != null) {
-                    nodes = getNodeStream(result.result().getList()).collect(Collectors.toSet());
-                }
+                nodes = getNodeStream(result.result()).collect(Collectors.toSet());
                 log.trace("List of fetched nodes is: '{}'", nodes);
                 futureNodes.complete();
             } else {
@@ -395,6 +386,10 @@ public class NodeManager {
         return futureTcp;
     }
 
+    private void printLocalNodeMap() {
+        vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
+    }
+
     /**
      * Simple representation of tcp address.
      */
@@ -443,9 +438,5 @@ public class NodeManager {
         public Stream<String> getNodeIds() {
             return nodeIds;
         }
-    }
-
-    private void printLocalNodeMap() {
-        vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
     }
 }

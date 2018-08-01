@@ -15,10 +15,7 @@ import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.spi.cluster.consul.impl.ConsulAsyncMap;
-import io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap;
-import io.vertx.spi.cluster.consul.impl.ConsulSyncMap;
-import io.vertx.spi.cluster.consul.impl.NodeManager;
+import io.vertx.spi.cluster.consul.impl.*;
 
 import java.util.List;
 import java.util.Map;
@@ -27,40 +24,38 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Cluster manager that uses Consul. Given implementation is fully based vertx consul client. See README for more details.
+ * Cluster manager that uses Consul. Given implementation is based vertx consul client.
+ * Current restrictions :
  * <p>
- * --
- * Notes :
- * 1) slf4j is used here instead of default vertx jul.
- * 2) there are lof trace messages now (to have a clue what's going on under the hood) -> this will get removed once the version
- * of given cluster manager more or less stable.
- * 3) java docs have to added.
+ * - String must be used as a key for async maps. Current {@link ClusterSerializationUtils} must get enhanced to allow custom type be the key.
+ * <p>
+ * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
+ * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
+ * <p>
+ * See README to get more details.
  *
  * @author Roman Levytskyi
  */
 public class ConsulClusterManager implements ClusterManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
-
+    private final String nodeId;
+    private final ConsulClientOptions cClOptns;
+    private final Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
+    private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
     private Vertx vertx;
-    private ConsulClient consulClient;
+    private ConsulClient cC;
     private NodeManager nodeManager;
     private volatile boolean active;
 
-    private final String nodeId;
-    private final ConsulClientOptions consulClientOptions;
-
-    private final Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
-    private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
-
     public ConsulClusterManager(final ConsulClientOptions options) {
         Objects.requireNonNull(options, "Consul client options can't be null");
-        this.consulClientOptions = options;
+        this.cClOptns = options;
         this.nodeId = UUID.randomUUID().toString();
     }
 
     public ConsulClusterManager() {
-        this.consulClientOptions = new ConsulClientOptions();
+        this.cClOptns = new ConsulClientOptions();
         this.nodeId = UUID.randomUUID().toString();
     }
 
@@ -68,8 +63,8 @@ public class ConsulClusterManager implements ClusterManager {
     public void setVertx(Vertx vertx) {
         log.trace("Injecting Vert.x instance and Initializing consul client ...");
         this.vertx = vertx;
-        this.consulClient = ConsulClient.create(vertx, consulClientOptions);
-        this.nodeManager = new NodeManager(vertx, consulClient, consulClientOptions, nodeId);
+        this.cC = ConsulClient.create(vertx, cClOptns);
+        this.nodeManager = new NodeManager(vertx, cC, cClOptns, nodeId);
     }
 
     /**
@@ -84,7 +79,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async multimap by name: '{}'", name);
         Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, consulClient, consulClientOptions, nodeManager.getSessionId()));
+        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, nodeManager.getSessionId(), nodeId));
         futureMultiMap.complete(asyncMultiMap);
         futureMultiMap.setHandler(asyncResultHandler);
     }
@@ -93,7 +88,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, consulClient, consulClientOptions, nodeManager.getSessionId()));
+        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, cClOptns));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
     }
@@ -101,7 +96,7 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public <K, V> Map<K, V> getSyncMap(String name) {
         log.trace("Getting sync map by name: '{}' with initial cache: '{}'", name, Json.encodePrettily(nodeManager.getHaInfo()));
-        return new ConsulSyncMap<>(name, vertx, consulClient, consulClientOptions, nodeManager.getSessionId(), nodeManager.getHaInfo());
+        return new ConsulSyncMap<>(name, vertx, cC, cClOptns, nodeManager.getSessionId(), nodeManager.getHaInfo());
     }
 
     @Override
@@ -112,6 +107,14 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
         log.trace("Getting counter by name: '{}'", name);
+        Future<Counter> counterFuture = Future.future();
+        if (name == null) {
+            counterFuture.fail("Counter's name is null.");
+        } else {
+            counterFuture.complete(new ConsulCounter(name, cC));
+        }
+
+        counterFuture.setHandler(resultHandler);
     }
 
     @Override
