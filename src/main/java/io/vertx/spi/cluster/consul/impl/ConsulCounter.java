@@ -7,6 +7,8 @@ import io.vertx.core.shareddata.Counter;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
+import static io.vertx.spi.cluster.consul.impl.ClusterManagerMaps.VERTX_COUNTERS;
+
 /**
  * Consul-based implementation of an asynchronous (distributed) counter that can be used to across the cluster to maintain a consistent count.
  * <p>
@@ -19,6 +21,7 @@ import io.vertx.ext.consul.KeyValueOptions;
  * will have to retry the read-update cycle. The Check-and-Set operation can be used to implement a shared counter, semaphore or a distributed lock
  * - and this is what we need.
  * <p>
+ * Good to read: http://alesnosek.com/blog/2017/07/25/check-and-set-operation-and-transactions-in-consul/
  *
  * @author Roman Levytskyi
  */
@@ -28,8 +31,8 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
     private final String consulKey;
 
     public ConsulCounter(String name, ConsulClient cC) {
-        super(name, cC);
-        this.consulKey = getConsulKey(ClusterManagerMaps.VERTX_COUNTERS.getName(), name);
+        super(VERTX_COUNTERS.getName(), cC);
+        this.consulKey = getConsulKey(VERTX_COUNTERS.getName(), name);
     }
 
     @Override
@@ -41,17 +44,17 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
 
     @Override
     public void incrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(true, 1l, resultHandler);
+        calculateAndCompareAndSwap(true, 1L, resultHandler);
     }
 
     @Override
     public void getAndIncrement(Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(false, 1l, resultHandler);
+        calculateAndCompareAndSwap(false, 1L, resultHandler);
     }
 
     @Override
     public void decrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(true, -1l, resultHandler);
+        calculateAndCompareAndSwap(true, -1L, resultHandler);
     }
 
     @Override

@@ -13,7 +13,6 @@ import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
-import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
 
 import java.net.UnknownHostException;
 

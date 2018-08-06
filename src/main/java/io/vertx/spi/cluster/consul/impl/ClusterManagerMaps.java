@@ -11,9 +11,10 @@ enum ClusterManagerMaps {
     VERTX_HA_INFO("__vertx.haInfo"),
     // contains subscribers listening for events on event bus channels.
     VERTX_SUBS("__vertx.subs"),
-    // contains node's distributed counters.
-    VERTX_COUNTERS("__vertx.counters");
-
+    // contains nodes's distributed counters.
+    VERTX_COUNTERS("__vertx.counters"),
+    // contains nodes's distributed locks.
+    VERTX_LOCKS("__vertx.locks");
     private String name;
 
     ClusterManagerMaps(String name) {

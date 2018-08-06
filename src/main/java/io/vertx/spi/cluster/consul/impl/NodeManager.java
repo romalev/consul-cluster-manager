@@ -11,6 +11,7 @@ import io.vertx.core.net.NetServer;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.*;
+import io.vertx.spi.cluster.consul.examples.AvailablePortFinder;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -126,7 +127,7 @@ public class NodeManager {
                 vertx.executeBlocking(blockingEvent -> {
                     synchronized (this) {
                         NodeWatchResult watchResult = getWatchResult(event.prevResult(), event.nextResult());
-                        if (watchResult.areNodesJoined()) {
+                        if (watchResult.nodesJoined()) {
                             watchResult.getNodeIds().forEach(joinedNodeId -> {
                                 log.trace("New node: '{}' has joined  the cluster.", joinedNodeId);
                                 nodes.add(joinedNodeId);
@@ -420,7 +421,7 @@ public class NodeManager {
     }
 
     /**
-     * Simple result holder of result of consul watch operation.
+     * Simple result holder of watching vertx nodes (consul services).
      */
     private final class NodeWatchResult {
         private final boolean nodesJoined;
@@ -431,7 +432,7 @@ public class NodeManager {
             this.nodeIds = nodeIds;
         }
 
-        public boolean areNodesJoined() {
+        public boolean nodesJoined() {
             return nodesJoined;
         }
 

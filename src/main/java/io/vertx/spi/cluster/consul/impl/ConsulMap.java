@@ -3,13 +3,11 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValue;
-import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.KeyValueOptions;
+import io.vertx.ext.consul.*;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decodeF;
 import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.encodeF;
@@ -70,10 +68,10 @@ abstract class ConsulMap<K, V> {
         Future<Boolean> future = Future.future();
         consulClient.putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("'{}'- KV: '{}'->'{}' has been put to CKV.", name, key, value);
+                log.trace("'{}'- put KV: '{}'->'{}' is: '{}'", name, key, value, resultHandler.result());
                 future.complete(resultHandler.result());
             } else {
-                log.error("'{}' - Can't put KV: '{}'->'{}' to CKV due to: '{}'", name, key, value, future.cause().toString());
+                log.error("'{}' - Can't put KV: '{}'->'{}' to CKV due to: '{}'", name, key, value, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
         });
@@ -208,6 +206,47 @@ abstract class ConsulMap<K, V> {
     }
 
     /**
+     * Creates TTL dedicated consul session. TTL on entries is handled by relaying on consul session itself.
+     * We have to register the session first in consul and then bound the session's id with entries we want to put ttl on.
+     *
+     * @param ttl - holds ttl in ms, this value must be between {@code 10s} and {@code 86400s} currently.
+     * @return session id.
+     */
+    Future<String> getTtlSessionId(long ttl, K k) {
+        if (ttl < 10000) {
+            log.warn("Specified ttl is less than allowed in consul -> min ttl is 10s.");
+            ttl = 10000;
+        }
+
+        if (ttl > 86400000) {
+            log.warn("Specified ttl is more that allowed in consul -> max ttl is 86400s.");
+            ttl = 86400000;
+        }
+
+        String consulKey = getConsulKey(name, k);
+        String sessionName = "ttlSession_" + consulKey;
+        Future<String> future = Future.future();
+        SessionOptions sessionOpts = new SessionOptions()
+                .setTtl(TimeUnit.MILLISECONDS.toSeconds(ttl))
+                .setBehavior(SessionBehavior.DELETE)
+                // Lock delay is a time duration, between 0 and 60 seconds. When a session invalidation takes place,
+                // Consul prevents any of the previously held locks from being re-acquired for the lock-delay interval
+                .setLockDelay(0)
+                .setName(sessionName);
+
+        consulClient.createSessionWithOptions(sessionOpts, idHandler -> {
+            if (idHandler.succeeded()) {
+                log.trace("TTL session has been created with id: '{}'", idHandler.result());
+                future.complete(idHandler.result());
+            } else {
+                log.error("Failed to created ttl consul session due to: '{}'", idHandler.cause().toString());
+                future.fail(idHandler.cause());
+            }
+        });
+        return future;
+    }
+
+    /**
      * Verifies whether value is not null.
      */
     Future<Void> assertValueIsNotNull(Object value) {
@@ -232,7 +271,7 @@ abstract class ConsulMap<K, V> {
         else return io.vertx.core.Future.succeededFuture();
     }
 
-
+    // FIXME : analyze whether we can remove name.
     String getConsulKey(String name, K k) {
         return name + "/" + k.toString();
     }
