@@ -6,6 +6,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
+import io.vertx.ext.consul.KeyValueOptions;
 import io.vertx.ext.consul.Watch;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -14,7 +15,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
-import static io.vertx.spi.cluster.consul.impl.Utils.decode;
+import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
 
 /**
  * Distributed sync map implementation based on consul key-value store.
@@ -26,6 +27,8 @@ import static io.vertx.spi.cluster.consul.impl.Utils.decode;
  * - cache write operations happens through consul watch that watches consul kv store updates (that seems to be the only way to acknowledge successful write operation to consul agent kv store).
  * <p>
  * Note: given cache implementation MIGHT NOT BE mature enough to handle different sort of failures that might occur (hey, that's distributed systems world :))
+ * <p>
+ * Sync map's entry IS (MUST BE) EPHEMERAL.
  *
  * @author Roman Levytskyi
  */
@@ -36,12 +39,15 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     private final Map<K, V> cache;
     private final Vertx vertx;
     private final ConsulClientOptions consulClientOptions;
+    private final KeyValueOptions kvOptions;
 
-    public ConsulSyncMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String sessionId, Map<K, V> cache) {
-        super(consulClient, name, sessionId);
-        this.vertx = vertx;
-        this.consulClientOptions = consulClientOptions;
+    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, ConsulClientOptions cCOptions, String sessionId, Map<K, V> cache) {
+        super(name, cC);
+        this.vertx = vx;
+        this.consulClientOptions = cCOptions;
         this.cache = cache;
+        // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
+        this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
         watchHaInfoMap().start();
         printCache();
     }
@@ -74,7 +80,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     @Nullable
     @Override
     public V put(K key, V value) {
-        putValue(key, value);
+        putValue(key, value, kvOptions);
         return value;
     }
 
@@ -121,6 +127,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         return Watch.keyPrefix(name, vertx, consulClientOptions).setHandler(promise -> {
             if (promise.succeeded()) {
                 // below is full cache update operation - this operation has be synchronized to NOT allow anyone else (any other threads) to read the cache while it's being updated.
+                // FIXME
                 synchronized (this) {
                     cache.clear();
                     if (promise.nextResult() != null && promise.nextResult().getList() != null && !promise.nextResult().getList().isEmpty()) {
