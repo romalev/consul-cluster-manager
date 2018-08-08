@@ -14,7 +14,7 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 
-import java.net.UnknownHostException;
+import java.util.concurrent.CountDownLatch;
 
 public class AliceService {
 
@@ -27,18 +27,13 @@ public class AliceService {
     private static Vertx vertx;
 
 
-    public static void main(String[] args) throws UnknownHostException {
+    public static void main(String[] args) {
         log.info("Booting up the ServiceA...");
+        CountDownLatch countDownLatch = new CountDownLatch(1);
 
-
-        // 3. consul cluster manager.
         ConsulClusterManager consulClusterManager = new ConsulClusterManager();
-
-        // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
-
         vertxOptions.setClusterManager(consulClusterManager);
-
         Vertx.clusteredVertx(vertxOptions, res -> {
             if (res.succeeded()) {
                 log.info("Clustered vertx instance has been successfully created.");
@@ -46,11 +41,24 @@ public class AliceService {
 
                 ServiceAVerticle verticle = new ServiceAVerticle();
                 log.info("Deploying ServiceAVerticle ... ");
-                vertx.deployVerticle(verticle);
+                vertx.deployVerticle(verticle, event -> {
+                    if (event.succeeded()) {
+                        log.info("Vertcile: '{}' deployed.", event.result());
+                        countDownLatch.countDown();
+                    }
+                });
             } else {
                 log.info("Clustered vertx instance failed.");
             }
         });
+
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        vertx.close();
     }
 
     /**
