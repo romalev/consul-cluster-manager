@@ -8,7 +8,6 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ServiceOptions;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
-import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;

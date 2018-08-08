@@ -41,8 +41,10 @@ public class ConsulClusterManager implements ClusterManager {
     private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
     private final String nodeId;
     private final ConsulClientOptions cClOptns;
-    private final Map<String, AsyncMap<?, ?>> asyncMapCache = new ConcurrentHashMap<>();
-    private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMapCache = new ConcurrentHashMap<>();
+    private final Map<String, ConsulLock> locks = new ConcurrentHashMap<>();
+    private final Map<String, ConsulCounter> counters = new ConcurrentHashMap<>();
+    private final Map<String, AsyncMap<?, ?>> asyncMaps = new ConcurrentHashMap<>();
+    private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
     private Vertx vertx;
     private ConsulClient cC;
     private NodeManager nodeManager;
@@ -79,7 +81,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async multimap by name: '{}'", name);
         Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-        AsyncMultiMap asyncMultiMap = asyncMultiMapCache.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, nodeManager.getSessionId(), nodeId));
+        AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, nodeManager.getSessionId(), nodeId));
         futureMultiMap.complete(asyncMultiMap);
         futureMultiMap.setHandler(asyncResultHandler);
     }
@@ -88,7 +90,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMapCache.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, cClOptns));
+        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, cClOptns));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
     }
@@ -102,18 +104,18 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
         log.trace("Getting lock with timeout by name: '{}'", name);
+        Future<Lock> futureLock = Future.future();
+        Lock lock = locks.computeIfAbsent(name, key -> new ConsulLock(name, timeout, cC));
+        futureLock.complete(lock);
+        futureLock.setHandler(resultHandler);
     }
 
     @Override
     public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
         log.trace("Getting counter by name: '{}'", name);
         Future<Counter> counterFuture = Future.future();
-        if (name == null) {
-            counterFuture.fail("Counter's name is null.");
-        } else {
-            counterFuture.complete(new ConsulCounter(name, cC));
-        }
-
+        Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, cC));
+        counterFuture.complete(counter);
         counterFuture.setHandler(resultHandler);
     }
 

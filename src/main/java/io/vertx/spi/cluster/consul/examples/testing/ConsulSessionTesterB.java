@@ -6,7 +6,7 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetServer;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.ext.consul.*;
-import io.vertx.spi.cluster.consul.impl.AvailablePortFinder;
+import io.vertx.spi.cluster.consul.examples.AvailablePortFinder;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;

@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl;
+package io.vertx.spi.cluster.consul.examples;
 
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
