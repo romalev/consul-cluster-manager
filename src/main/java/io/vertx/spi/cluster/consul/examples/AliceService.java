@@ -44,21 +44,13 @@ public class AliceService {
                 vertx.deployVerticle(verticle, event -> {
                     if (event.succeeded()) {
                         log.info("Vertcile: '{}' deployed.", event.result());
-                        countDownLatch.countDown();
+                        // countDownLatch.countDown();
                     }
                 });
             } else {
                 log.info("Clustered vertx instance failed.");
             }
         });
-
-        try {
-            countDownLatch.await();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        vertx.close();
     }
 
     /**
@@ -72,6 +64,11 @@ public class AliceService {
             final Router router = Router.router(vertx);
 
             router.route("/serviceA*").handler(BodyHandler.create());
+            router.get("/serviceA/vertxclose").handler(event -> {
+                vertx.close();
+                event.response().setStatusCode(HttpResponseStatus.OK.code()).end("Vertx closed.");
+            });
+
             router.get("/serviceA").handler(event -> {
                 vertx.sharedData().getAsyncMap("custom", result -> {
                     if (result.succeeded()) {

@@ -9,7 +9,6 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -31,12 +30,10 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
     private final Vertx vertx;
-    private final ConsulClientOptions cCOptions;
 
-    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC, ConsulClientOptions cCOptions) {
+    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC) {
         super(name, cC);
         this.vertx = vertx;
-        this.cCOptions = cCOptions;
         printOutAsyncMap();
     }
 

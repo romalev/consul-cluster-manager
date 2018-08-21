@@ -5,7 +5,7 @@ import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
+import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.KeyValueOptions;
 import io.vertx.ext.consul.Watch;
 import org.jetbrains.annotations.NotNull;
@@ -38,17 +38,17 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
     private final Map<K, V> cache;
     private final Vertx vertx;
-    private final ConsulClientOptions consulClientOptions;
+    private final Watch<KeyValueList> watch;
     private final KeyValueOptions kvOptions;
 
-    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, ConsulClientOptions cCOptions, String sessionId, Map<K, V> cache) {
+    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, Watch<KeyValueList> watch, String sessionId, Map<K, V> cache) {
         super(name, cC);
         this.vertx = vx;
-        this.consulClientOptions = cCOptions;
+        this.watch = watch;
         this.cache = cache;
         // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
         this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
-        watchHaInfoMap().start();
+        watchHaInfoMap();
         printCache();
     }
 
@@ -120,34 +120,35 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     }
 
     /**
-     * Watches registration. Watch has to be registered in order to keep the internal cache consistent and in sync with central
-     * Consul KV store. Watch listens to events that are coming from Consul KV store and updates the internal cache appropriately.
+     * Watch listens to events that are coming from Consul KV store and updates the internal cache appropriately.
      */
-    private Watch watchHaInfoMap() {
-        return Watch.keyPrefix(name, vertx, consulClientOptions).setHandler(promise -> {
-            if (promise.succeeded()) {
-                // below is full cache update operation - this operation has be synchronized to NOT allow anyone else (any other threads) to read the cache while it's being updated.
-                // FIXME
-                synchronized (this) {
-                    cache.clear();
-                    if (promise.nextResult() != null && promise.nextResult().getList() != null && !promise.nextResult().getList().isEmpty()) {
-                        promise.nextResult().getList().forEach(keyValue -> {
-                            try {
-                                K key = (K) keyValue.getKey().replace(name + "/", "");
-                                V value = decode(keyValue.getValue());
-                                cache.put(key, value);
-                            } catch (Exception e) {
-                                log.error("Exception occurred while updating the local map: '{}'. Exception details: '{}'.", name, e.getMessage());
-                                // don't throw any exceptions here - just ignore kv pair that can't be decoded.
+    private void watchHaInfoMap() {
+        watch
+                .setHandler(promise -> {
+                    if (promise.succeeded()) {
+                        // below is full cache update operation - this operation has be synchronized to NOT allow anyone else (any other threads) to read the cache while it's being updated.
+                        // FIXME
+                        synchronized (this) {
+                            cache.clear();
+                            if (promise.nextResult() != null && promise.nextResult().getList() != null && !promise.nextResult().getList().isEmpty()) {
+                                promise.nextResult().getList().forEach(keyValue -> {
+                                    try {
+                                        K key = (K) keyValue.getKey().replace(name + "/", "");
+                                        V value = decode(keyValue.getValue());
+                                        cache.put(key, value);
+                                    } catch (Exception e) {
+                                        log.error("Exception occurred while updating the local map: '{}'. Exception details: '{}'.", name, e.getMessage());
+                                        // don't throw any exceptions here - just ignore kv pair that can't be decoded.
+                                    }
+                                });
                             }
-                        });
+                        }
+                        log.trace("Update to local cache of : '{}'  just happened and now cache is: '{}'.", name, Json.encodePrettily(cache));
+                    } else {
+                        log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
                     }
-                }
-                log.trace("Update to local cache of : '{}'  just happened and now cache is: '{}'.", name, Json.encodePrettily(cache));
-            } else {
-                log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
-            }
-        });
+                })
+                .start();
     }
 
     // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.

@@ -3,7 +3,6 @@ package io.vertx.spi.cluster.consul.examples.testing;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.SessionBehavior;
 import io.vertx.ext.consul.SessionOptions;
 import io.vertx.spi.cluster.consul.impl.ConsulAsyncMap;
@@ -26,12 +25,10 @@ public class ConsulCounterTester {
                 .setName(sessionName);
 
 
-        ConsulAsyncMap consulAsyncMap = new ConsulAsyncMap("__async", vertx, consulClient, new ConsulClientOptions());
+        ConsulAsyncMap consulAsyncMap = new ConsulAsyncMap("__async", vertx, consulClient);
         consulAsyncMap.putIfAbsent("test", "test2", handler -> {
             System.out.println(handler);
         });
-
-
 
 
 //        ConsulCounter consulCounter = new ConsulCounter("tester", consulClient);

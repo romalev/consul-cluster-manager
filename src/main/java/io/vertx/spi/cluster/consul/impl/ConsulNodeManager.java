@@ -45,15 +45,15 @@ import java.util.stream.Stream;
  *
  * @author Roman Levytskyi
  */
-public class NodeManager {
+public class ConsulNodeManager {
 
-    private static final Logger log = LoggerFactory.getLogger(NodeManager.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsulNodeManager.class);
     private static final String TCP_CHECK_INTERVAL = "10s";
     private static final String NODE_COMMON_TAG = "vertx-clustering";
 
     private final Vertx vertx;
     private final ConsulClient consulClient;
-    private final ConsulClientOptions consulClientOptions;
+    private final Watch<ServiceList> nodeWatch;
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
@@ -65,10 +65,10 @@ public class NodeManager {
     // consul session id used to lock map entries.
     private String sessionId;
 
-    public NodeManager(Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String nodeId) {
+    public ConsulNodeManager(Vertx vertx, ConsulClient consulClient, Watch<ServiceList> watch, String nodeId) {
         this.vertx = vertx;
         this.consulClient = consulClient;
-        this.consulClientOptions = consulClientOptions;
+        this.nodeWatch = watch;
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
@@ -98,15 +98,16 @@ public class NodeManager {
      * @param resultHandler - result of async "node has left the cluster" operation.
      */
     public void leave(Handler<AsyncResult<Void>> resultHandler) {
-        destroySession()
-                .compose(aVoid -> deregisterService())
-                .compose(aVoid -> deregisterTcpCheck())
+        Future.succeededFuture()
                 .compose(aVoid -> {
                     nodes.clear();
                     haInfoMap.clear();
                     netServer.close();
                     return Future.<Void>succeededFuture();
                 })
+                .compose(aVoid -> destroySession())
+                .compose(aVoid -> deregisterService())
+                .compose(aVoid -> deregisterTcpCheck())
                 .setHandler(resultHandler);
     }
 
@@ -136,11 +137,12 @@ public class NodeManager {
 
     /**
      * Listens for a new nodes within the cluster.
+     * Leaky design
      */
     public Watch watchNewNodes(NodeListener nodeListener) {
         // - tricky !!! watchers are always executed  within the event loop context !!!
         // - nodeAdded() call must NEVER be called within event loop context ???!!!.
-        return Watch.services(vertx, consulClientOptions).setHandler(event -> {
+        return nodeWatch.setHandler(event -> {
             if (event.succeeded()) {
                 vertx.executeBlocking(blockingEvent -> {
                     synchronized (this) {
