@@ -45,30 +45,30 @@ import java.util.stream.Stream;
  *
  * @author Roman Levytskyi
  */
-public class NodeManager {
+public class ConsulNodeManager {
 
-    private static final Logger log = LoggerFactory.getLogger(NodeManager.class);
+    private static final Logger log = LoggerFactory.getLogger(ConsulNodeManager.class);
     private static final String TCP_CHECK_INTERVAL = "10s";
     private static final String NODE_COMMON_TAG = "vertx-clustering";
 
     private final Vertx vertx;
     private final ConsulClient consulClient;
-    private final ConsulClientOptions consulClientOptions;
+    private final Watch<ServiceList> nodeWatch;
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
-    // dedicated cache to keep session id where node id is the key. Consul session id used to lock map entries.
-    private final Map<String, String> sessionCache = new ConcurrentHashMap<>();
     // dedicated cache to initialize and keep haInfo.
     private final Map haInfoMap = new ConcurrentHashMap<>();
     private NetServer netServer;
     // local cache of all vertx cluster nodes.
     private Set<String> nodes;
+    // consul session id used to lock map entries.
+    private String sessionId;
 
-    public NodeManager(Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String nodeId) {
+    public ConsulNodeManager(Vertx vertx, ConsulClient consulClient, Watch<ServiceList> watch, String nodeId) {
         this.vertx = vertx;
         this.consulClient = consulClient;
-        this.consulClientOptions = consulClientOptions;
+        this.nodeWatch = watch;
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
@@ -77,9 +77,9 @@ public class NodeManager {
 
 
     /**
-     * Asynchronously joins the vertx node with consul cluster.
+     * Asynchronously lets vertx node join the cluster.
      *
-     * @param resultHandler - holds the result of async join operation.
+     * @param resultHandler - result of async "node has joined the cluster" operation.
      */
     public void join(Handler<AsyncResult<Void>> resultHandler) {
         getTcpAddress()
@@ -89,6 +89,25 @@ public class NodeManager {
                 .compose(aVoid -> registerSession())
                 .compose(aVoid -> discoverNodes())
                 .compose(aVoid -> initHaInfo())
+                .setHandler(resultHandler);
+    }
+
+    /**
+     * Asynchronously let the vertx node leave the cluster.
+     *
+     * @param resultHandler - result of async "node has left the cluster" operation.
+     */
+    public void leave(Handler<AsyncResult<Void>> resultHandler) {
+        Future.succeededFuture()
+                .compose(aVoid -> {
+                    nodes.clear();
+                    haInfoMap.clear();
+                    netServer.close();
+                    return Future.<Void>succeededFuture();
+                })
+                .compose(aVoid -> destroySession())
+                .compose(aVoid -> deregisterService())
+                .compose(aVoid -> deregisterTcpCheck())
                 .setHandler(resultHandler);
     }
 
@@ -103,7 +122,7 @@ public class NodeManager {
      * @return session id - used to make consul map entries ephemeral.
      */
     public String getSessionId() {
-        return sessionCache.get(nodeId);
+        return sessionId;
     }
 
     /**
@@ -118,11 +137,12 @@ public class NodeManager {
 
     /**
      * Listens for a new nodes within the cluster.
+     * Leaky design
      */
     public Watch watchNewNodes(NodeListener nodeListener) {
         // - tricky !!! watchers are always executed  within the event loop context !!!
         // - nodeAdded() call must NEVER be called within event loop context ???!!!.
-        return Watch.services(vertx, consulClientOptions).setHandler(event -> {
+        return nodeWatch.setHandler(event -> {
             if (event.succeeded()) {
                 vertx.executeBlocking(blockingEvent -> {
                     synchronized (this) {
@@ -267,7 +287,7 @@ public class NodeManager {
                 log.trace("'{}' has been unregistered.");
                 future.complete();
             } else {
-                log.trace("Couldn't unregister service: '{}' due to: '{}'", nodeId, event.cause().toString());
+                log.error("Couldn't unregister service: '{}' due to: '{}'", nodeId, event.cause().toString());
                 future.fail(event.cause());
             }
         });
@@ -275,10 +295,7 @@ public class NodeManager {
     }
 
     /**
-     * Gets the tcp check registered within consul.
-     *
-     * @param tcpAddress
-     * @return completed future if tcp check has been successfully registered in consul cluster, failed future - otherwise.
+     * Gets the node's tcp check registered within consul .
      */
     private Future<Void> registerTcpCheck(TcpAddress tcpAddress) {
         Future<Void> future = Future.future();
@@ -303,7 +320,23 @@ public class NodeManager {
                 future.fail(result.cause());
             }
         });
+        return future;
+    }
 
+    /**
+     * Gets the node's tcp check de-registered in consul.
+     */
+    private Future<Void> deregisterTcpCheck() {
+        Future<Void> future = Future.future();
+        consulClient.deregisterCheck(checkId, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                log.trace("Check: '{}' for node: '{}' has been deregitered.", checkId, nodeId);
+                future.complete();
+            } else {
+                log.error("Can't deregister check: '{}' for node: '{}' due to: '{}'", checkId, nodeId, resultHandler.cause());
+                future.fail(resultHandler.cause());
+            }
+        });
         return future;
     }
 
@@ -344,11 +377,27 @@ public class NodeManager {
         consulClient.createSessionWithOptions(sessionOptions, session -> {
             if (session.succeeded()) {
                 log.trace("Session : '{}' has been registered.", session.result());
-                sessionCache.putIfAbsent(nodeId, session.result());
+                sessionId = session.result();
                 future.complete();
             } else {
                 log.error("Couldn't register the session due to: {}", session.cause().toString());
                 future.fail(session.cause());
+            }
+        });
+        return future;
+    }
+
+    /**
+     * Destroys node's session in consul.
+     */
+    private Future<Void> destroySession() {
+        Future<Void> future = Future.future();
+        consulClient.destroySession(sessionId, resultHandler -> {
+            if (resultHandler.succeeded()) {
+                log.trace("Session: '{}' has been successfully destroyed for node: '{}'.", sessionId, nodeId);
+            } else {
+                log.error("Can't destroy session: '{}' for node: '{}' due to: '{}'", sessionId, resultHandler.cause(), nodeId);
+                future.fail(resultHandler.cause());
             }
         });
         return future;
@@ -364,7 +413,8 @@ public class NodeManager {
     private Future<TcpAddress> createTcpServer(final TcpAddress tcpAddress) {
         Future<TcpAddress> future = Future.future();
         netServer = vertx.createNetServer(new NetServerOptions().setHost(tcpAddress.getHost()).setPort(tcpAddress.getPort()));
-        netServer.connectHandler(event -> log.trace("Health heart beat message sent back to Consul"));
+        netServer.connectHandler(event -> {
+        }); // node's tcp server acknowledges consul's heartbeat message.
         netServer.listen(listenEvent -> {
             if (listenEvent.succeeded()) future.complete(tcpAddress);
             else future.fail(listenEvent.cause());

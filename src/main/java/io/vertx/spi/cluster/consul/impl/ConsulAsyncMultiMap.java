@@ -44,17 +44,15 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
     private final Vertx vertx;
-    private final ConsulClientOptions consulClientOptions;
     private final String nodeId;
     private final KeyValueOptions kvOpts;
 
     // FIXME - to achieve round-robin loadbalancing - this cache has to implemnted.
     private ConcurrentMap<String, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
 
-    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, ConsulClientOptions consulClientOptions, String sessionId, String nodeId) {
+    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, String sessionId, String nodeId) {
         super(name, consulClient);
         this.vertx = vertx;
-        this.consulClientOptions = consulClientOptions;
         this.nodeId = nodeId;
         // options to make entries of this map ephemeral.
         this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
@@ -76,7 +74,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                 .compose(aVoid -> consulEntries())
                 .compose(keyValueList -> {
                     Future<ChoosableIterable<V>> future = Future.future();
-                    Set<String> collectedPlainValueSet = keyValueList.getList().stream()
+                    Set<String> collectedPlainValueSet = getListResult(keyValueList).stream()
                             .filter(keyValue -> keyValue.getKey().contains(k.toString()))
                             .map(KeyValue::getValue)
                             .collect(Collectors.toSet());
