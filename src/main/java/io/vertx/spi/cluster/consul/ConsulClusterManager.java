@@ -16,11 +16,9 @@ import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.*;
 import io.vertx.spi.cluster.consul.impl.*;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Cluster manager that uses Consul. Given implementation is based vertx consul client.
@@ -44,7 +42,8 @@ public class ConsulClusterManager implements ClusterManager {
     private final Map<String, ConsulCounter> counters = new ConcurrentHashMap<>();
     private final Map<String, AsyncMap<?, ?>> asyncMaps = new ConcurrentHashMap<>();
     private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
-    private final Map<String, Watch> watches = new ConcurrentHashMap<>();
+    // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches must be stopped.
+    private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
     private Vertx vertx;
     private ConsulClient cC;
     private ConsulNodeManager nodeManager;
@@ -90,7 +89,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC));
+        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, createAndGetMapWatch(name)));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
     }
@@ -171,15 +170,28 @@ public class ConsulClusterManager implements ClusterManager {
         return active;
     }
 
+    /**
+     * Creates consul (service specific) watch.
+     */
     private Watch<ServiceList> createAndGetNodeWatch() {
-        return watches.computeIfAbsent("node", key -> Watch.services(vertx, cClOptns));
+        Watch<ServiceList> serviceWatch = Watch.services(vertx, cClOptns);
+        watches.add(serviceWatch);
+        return serviceWatch;
     }
 
+    /**
+     * Creates consul (kv store specific) watch.
+     */
     private Watch<KeyValueList> createAndGetMapWatch(String mapName) {
-        return watches.computeIfAbsent(mapName, key -> Watch.keyPrefix(mapName, vertx, cClOptns));
+        Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
+        watches.add(kvWatch);
+        return kvWatch;
     }
 
+    /**
+     * Stops all node's watches.
+     */
     private void stopWatches() {
-        watches.values().forEach(Watch::stop);
+        watches.forEach(Watch::stop);
     }
 }

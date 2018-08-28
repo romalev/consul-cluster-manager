@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.suite;
+package io.vertx.spi.cluster.consul.impl;
 
 import org.junit.Test;
 

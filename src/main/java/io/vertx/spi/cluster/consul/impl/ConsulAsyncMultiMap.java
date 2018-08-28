@@ -10,7 +10,6 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ChoosableIterable;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -49,6 +48,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
     // FIXME - to achieve round-robin loadbalancing - this cache has to implemnted.
     private ConcurrentMap<String, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
+
 
     public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, String sessionId, String nodeId) {
         super(name, consulClient);

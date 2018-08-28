@@ -8,9 +8,7 @@ import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValue;
-import io.vertx.ext.consul.KeyValueOptions;
+import io.vertx.ext.consul.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,10 +28,12 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
     private final Vertx vertx;
+    private final Map<K, V> cache;
 
-    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC) {
+    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC, Watch<KeyValueList> watch) {
         super(name, cC);
         this.vertx = vertx;
+        cache = new ConsulVolatileCache<>(name, true, watch, Optional.empty());
         printOutAsyncMap();
     }
 

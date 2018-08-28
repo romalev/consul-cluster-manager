@@ -1,7 +1,7 @@
 package io.vertx.spi.cluster.consul;
 
-import io.vertx.spi.cluster.consul.suite.ConsulAsyncMapTest;
-import io.vertx.spi.cluster.consul.suite.ConsulAsyncMultiMapTest;
+import io.vertx.spi.cluster.consul.impl.ConsulAsyncMapTest;
+import io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMapTest;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
