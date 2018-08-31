@@ -53,7 +53,6 @@ public class ConsulNodeManager {
 
     private final Vertx vertx;
     private final ConsulClient consulClient;
-    private final Watch<ServiceList> nodeWatch;
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
@@ -65,10 +64,9 @@ public class ConsulNodeManager {
     // consul session id used to lock map entries.
     private String sessionId;
 
-    public ConsulNodeManager(Vertx vertx, ConsulClient consulClient, Watch<ServiceList> watch, String nodeId) {
+    public ConsulNodeManager(Vertx vertx, ConsulClient consulClient, String nodeId) {
         this.vertx = vertx;
         this.consulClient = consulClient;
-        this.nodeWatch = watch;
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
@@ -142,7 +140,7 @@ public class ConsulNodeManager {
     public Watch watchNewNodes(NodeListener nodeListener) {
         // - tricky !!! watchers are always executed  within the event loop context !!!
         // - nodeAdded() call must NEVER be called within event loop context ???!!!.
-        return nodeWatch.setHandler(event -> {
+        return CacheManager.getInstance().createAndGetNodeWatch().setHandler(event -> {
             if (event.succeeded()) {
                 vertx.executeBlocking(blockingEvent -> {
                     synchronized (this) {

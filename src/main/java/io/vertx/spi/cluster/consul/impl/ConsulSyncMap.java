@@ -5,9 +5,7 @@ import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.KeyValueOptions;
-import io.vertx.ext.consul.Watch;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,10 +32,10 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     private final KeyValueOptions kvOptions;
     private final Map<K, V> cache;
 
-    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, Watch<KeyValueList> watch, String sessionId, Map<K, V> haInfo) {
+    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, String sessionId, Map<K, V> haInfo) {
         super(name, cC);
         this.vertx = vx;
-        this.cache = new ConsulVolatileCache<>(name, true, watch, Optional.of(haInfo));
+        this.cache = CacheManager.getInstance().createAndGetCacheMap(name, true, Optional.of(haInfo));
         // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
         this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
         printCache();

@@ -3,14 +3,15 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.Future;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.Watch;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.RunTestOnContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.spi.cluster.consul.ConsulAgent;
-import org.junit.*;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.ClassRule;
+import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,7 +33,6 @@ public class ConsulSyncMapTest {
     private static ConsulAgent consulAgent;
     private static ConsulClient consulClient;
     private static ConsulClientOptions cCOps;
-    private static Watch<KeyValueList> watch;
     private static ConsulSyncMap<String, String> consulSyncMap;
 
     @ClassRule
@@ -42,17 +42,15 @@ public class ConsulSyncMapTest {
     public static void setUp(TestContext context) {
         Async async = context.async();
         rule.vertx().executeBlocking(event -> {
-            if (consulAgent == null) {
-                consulAgent = new ConsulAgent();
-            }
+            consulAgent = new ConsulAgent();
             cCOps = new ConsulClientOptions().setPort(consulAgent.getPort());
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
-            watch = Watch.keyPrefix(MAP_NAME, rule.vertx(), cCOps);
+            CacheManager.init(rule.vertx(), cCOps);
             event.complete();
         }, res ->
                 createConsulSessionId()
                         .compose(s -> {
-                            consulSyncMap = new ConsulSyncMap<>(MAP_NAME, rule.vertx(), consulClient, watch, s, new ConcurrentHashMap<>());
+                            consulSyncMap = new ConsulSyncMap<>(MAP_NAME, rule.vertx(), consulClient, s, new ConcurrentHashMap<>());
                             return Future.succeededFuture();
                         })
                         .setHandler(event -> {
@@ -116,7 +114,7 @@ public class ConsulSyncMapTest {
 
     @AfterClass
     public static void tearDown(TestContext context) {
-        watch.stop();
+        CacheManager.close();
         consulAgent.stop();
         rule.vertx().close(context.asyncAssertSuccess());
     }
@@ -127,7 +125,7 @@ public class ConsulSyncMapTest {
         return future;
     }
 
-    private static void sleep(Long sleepTime, TestContext context) {
+    private void sleep(Long sleepTime, TestContext context) {
         try {
             Thread.sleep(sleepTime);
         } catch (InterruptedException e) {

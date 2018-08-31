@@ -26,28 +26,28 @@ import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
  *
  * @author Roman Levytskyi
  */
-public class ConsulVolatileCache<K, V> implements Map<K, V> {
+public class CacheMap<K, V> implements Map<K, V> {
 
-    private static final Logger log = LoggerFactory.getLogger(ConsulVolatileCache.class);
+    private static final Logger log = LoggerFactory.getLogger(CacheMap.class);
 
     private final Watch<KeyValueList> watch;
     private final String name;
     // true -> entries are to be encoded first and then put into the cache, false - plain entries are placed (as strings).
-    private final boolean encodingEnabled;
+    private final boolean enableDecoding;
 
     private Map<K, V> cache = new ConcurrentHashMap<>();
 
     /**
-     * @param name            - cache's name -> should always correspond to the same map's name to which cache is applied.
-     * @param encodingEnabled - true ->  entries are to be encoded first and then put into the cache, false -> plain entries are placed (as strings).
-     * @param watch           - consul watch.
-     * @param preBuiltCache   - optional: cache can be initialized with already pre-built one.
+     * @param name           - cache's name -> should always correspond to the same map's name to which cache is applied.
+     * @param enableDecoding -  true ->  entries are to be decoded first and then are to be put into the cache, false -> plain entries are placed directly into the cache (as strings).
+     * @param watch          - consul watch.
+     * @param map            - optional: cache can be initialized with already pre-built one.
      */
-    public ConsulVolatileCache(String name, boolean encodingEnabled, Watch<KeyValueList> watch, Optional<Map<K, V>> preBuiltCache) {
+    public CacheMap(String name, boolean enableDecoding, Watch<KeyValueList> watch, Optional<Map<K, V>> map) {
         this.name = name;
         this.watch = watch;
-        this.encodingEnabled = encodingEnabled;
-        preBuiltCache.ifPresent(kvMap -> cache.putAll(kvMap));
+        this.enableDecoding = enableDecoding;
+        map.ifPresent(kvMap -> cache.putAll(kvMap));
         start();
     }
 
@@ -186,7 +186,7 @@ public class ConsulVolatileCache<K, V> implements Map<K, V> {
     }
 
     private void addOrUpdateEntry(KeyValue keyValue) {
-        if (encodingEnabled) {
+        if (enableDecoding) {
             try {
                 K key = (K) keyValue.getKey().replace(name + "/", "");
                 V value = decode(keyValue.getValue());
