@@ -43,6 +43,7 @@ public class ConsulSyncMapTest {
         Async async = context.async();
         rule.vertx().executeBlocking(event -> {
             consulAgent = new ConsulAgent();
+            consulAgent.start();
             cCOps = new ConsulClientOptions().setPort(consulAgent.getPort());
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
             CacheManager.init(rule.vertx(), cCOps);
@@ -64,7 +65,7 @@ public class ConsulSyncMapTest {
 
 
     @Test
-    public void verifyAdd(TestContext context) {
+    public void verify_add(TestContext context) {
         Async async = context.async();
         // given
         String key = "keyA";
@@ -91,7 +92,7 @@ public class ConsulSyncMapTest {
     }
 
     @Test
-    public void verifyRemove(TestContext context) {
+    public void verify_remove(TestContext context) {
         Async async = context.async();
         // given
         String key = "keyA";
@@ -115,8 +116,8 @@ public class ConsulSyncMapTest {
     @AfterClass
     public static void tearDown(TestContext context) {
         CacheManager.close();
-        consulAgent.stop();
         rule.vertx().close(context.asyncAssertSuccess());
+        consulAgent.stop();
     }
 
     private static Future<String> createConsulSessionId() {

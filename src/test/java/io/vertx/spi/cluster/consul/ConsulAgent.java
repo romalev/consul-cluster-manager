@@ -22,10 +22,9 @@ public class ConsulAgent {
 
     public ConsulAgent() {
         this.port = getFreePort();
-        start();
     }
 
-    private void start() {
+    public void start() {
         consul = ConsulStarterBuilder.consulStarter().withHttpPort(port).build().start();
         log.info("Consul test agent is up and running on port: " + port);
     }

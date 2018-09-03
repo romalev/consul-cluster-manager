@@ -20,7 +20,7 @@ import java.util.Set;
  * Given implementation fully relies on internal cache (consul client doesn't have any cache built-in so we are sort of forced to come up with something custom)
  * which essentially is {@link java.util.concurrent.ConcurrentHashMap}.
  * <p>
- * Sync map's entry IS (MUST BE) EPHEMERAL.
+ * Sync map's entries are (AND ALWAYS MUST BE) EPHEMERAL.
  *
  * @author Roman Levytskyi
  */
@@ -69,31 +69,34 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     @Nullable
     @Override
     public V put(K key, V value) {
-        putValue(key, value, kvOptions).setHandler(event -> {
-            // in case of network drop - retry.
-            if (event.failed()) {
-                log.warn("KV: '{}->'{}' has NOT been put to Consul. Retrying...'", key, value);
-                put(key, value);
-            }
+        putValue(key, value, kvOptions).setHandler(putHandler -> {
+            if (putHandler.succeeded() && putHandler.result()) cache.put(key, value);
+                // TODO : retry policy should be introduced here - can't be retried forever.
+            else put(key, value);
+
         });
         return value;
     }
 
     @Override
     public V remove(Object key) {
-        removeValue((K) key);
+        removeConsulValue(consulKeyPath(name, (K) key)).setHandler(removeHandler -> {
+            if (removeHandler.succeeded() && removeHandler.result()) cache.remove(key);
+            else remove(key);
+        });
         return cache.get(key);
     }
 
     @Override
     public void putAll(Map<? extends K, ? extends V> m) {
-        log.trace("Putting: '{}' into Consul KV store.", Json.encodePrettily(m));
-        m.forEach(this::putValue);
+        m.forEach(this::put);
     }
 
     @Override
     public void clear() {
-        clearUp();
+        clearUp().setHandler(cHandler -> {
+            if (cHandler.succeeded()) cache.clear();
+        });
     }
 
     @NotNull

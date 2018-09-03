@@ -16,8 +16,6 @@ import io.vertx.ext.consul.KeyValueOptions;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -46,8 +44,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     private final String nodeId;
     private final KeyValueOptions kvOpts;
 
-    // FIXME - to achieve round-robin loadbalancing - this cache has to implemnted.
-    private ConcurrentMap<String, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
+    private final Map<K, ChoosableSet<V>> cache;
 
 
     public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, String sessionId, String nodeId) {
@@ -55,6 +52,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         this.vertx = vertx;
         this.nodeId = nodeId;
         // options to make entries of this map ephemeral.
+        this.cache = CacheManager.getInstance().createAndGetCacheMap(name);
         this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
         printOutAsyncMultiMap();
     }
@@ -122,6 +120,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
 
     // helper method used to print out periodically the async consul map.
+    // TODO: remove it.
     private void printOutAsyncMultiMap() {
         vertx.setPeriodic(15000, event -> consulClient.getValues(name, futureValues -> {
             if (futureValues.succeeded()) {

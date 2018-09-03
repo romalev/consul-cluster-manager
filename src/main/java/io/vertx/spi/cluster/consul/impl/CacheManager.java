@@ -126,5 +126,4 @@ public class CacheManager {
             throw new VertxException("Cache manager is not active.");
         }
     }
-
 }

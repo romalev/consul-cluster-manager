@@ -53,7 +53,7 @@ abstract class ConsulMap<K, V> {
         log.trace("'{}' - trying to put KV: '{}'->'{}' CKV.", name, k, v);
         return assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> encodeF(v))
-                .compose(value -> putConsulValue(getConsulKey(name, k), value, keyValueOptions));
+                .compose(value -> putConsulValue(consulKeyPath(name, k), value, keyValueOptions));
     }
 
     /**
@@ -87,7 +87,7 @@ abstract class ConsulMap<K, V> {
     Future<V> getValue(K k) {
         log.trace("'{}' - getting an entry by K: '{}' from CKV.", name, k);
         return assertKeyIsNotNull(k)
-                .compose(aVoid -> getConsulKeyValue(getConsulKey(name, k)))
+                .compose(aVoid -> getConsulKeyValue(consulKeyPath(name, k)))
                 .compose(consulValue -> decodeF(consulValue.getValue()));
     }
 
@@ -105,39 +105,11 @@ abstract class ConsulMap<K, V> {
                 log.trace("'{}' - got KV: '{}' - '{}'", name, consulKey, resultHandler.result().getValue());
                 future.complete(resultHandler.result());
             } else {
-                log.error("'{}' - can't get an entry by: '{}'", name, consulKey);
+                log.error("'{}' - can't get an entry by: '{}' due to: '{}'", name, consulKey, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
         });
         return future;
-    }
-
-    /**
-     * Removes the entry.
-     *
-     * @param k - holds the key.
-     * @return
-     */
-    Future<V> removeValue(K k) {
-        log.trace("'{}' - trying to remove an entry by K: '{}' from CKV.", name, k);
-        return getValue(k)
-                .compose(v -> {
-                    Future<V> future = Future.future();
-                    if (v == null) {
-                        future.complete();
-                    } else {
-                        consulClient.deleteValue(getConsulKey(name, k), resultHandler -> {
-                            if (resultHandler.succeeded()) {
-                                log.trace("'{}' - K: '{}' has been removed.", name, k.toString());
-                                future.complete(v);
-                            } else {
-                                log.trace("'{}' - Can't delete K: '{}' due to: '{}'.", name, k.toString(), resultHandler.cause().toString());
-                                future.fail(resultHandler.cause());
-                            }
-                        });
-                    }
-                    return future;
-                });
     }
 
     Future<Boolean> removeConsulValue(String key) {
@@ -208,6 +180,11 @@ abstract class ConsulMap<K, V> {
     /**
      * Creates TTL dedicated consul session. TTL on entries is handled by relaying on consul session itself.
      * We have to register the session first in consul and then bound the session's id with entries we want to put ttl on.
+     * <p>
+     * Note: session invalidation-time is twice the TTL time -> https://github.com/hashicorp/consul/issues/1172
+     * (This is done on purpose. The contract of the TTL is that it will not expire before that value, but could expire after.
+     * There are number of reasons for that (complexity during leadership transition), but consul devs add a grace period to account for clock skew and network delays.
+     * This is to shield the application from dealing with that.)
      *
      * @param ttl - holds ttl in ms, this value must be between {@code 10s} and {@code 86400s} currently.
      * @return session id.
@@ -223,7 +200,7 @@ abstract class ConsulMap<K, V> {
             ttl = 86400000;
         }
 
-        String consulKey = getConsulKey(name, k);
+        String consulKey = consulKeyPath(name, k);
         String sessionName = "ttlSession_" + consulKey;
         Future<String> future = Future.future();
         SessionOptions sessionOpts = new SessionOptions()
@@ -272,12 +249,8 @@ abstract class ConsulMap<K, V> {
     }
 
     // FIXME : analyze whether we can remove name.
-    String getConsulKey(String name, K k) {
+    String consulKeyPath(String name, K k) {
         return name + "/" + k.toString();
-    }
-
-    <T> List<T> getListResult(List<T> list) {
-        return list == null ? Collections.emptyList() : list;
     }
 
     List<KeyValue> getListResult(KeyValueList keyValueList) {
