@@ -5,28 +5,20 @@ import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.KeyValueOptions;
-import io.vertx.ext.consul.Watch;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
 
 /**
  * Distributed sync map implementation based on consul key-value store.
  * <p>
  * Given implementation fully relies on internal cache (consul client doesn't have any cache built-in so we are sort of forced to come up with something custom)
  * which essentially is {@link java.util.concurrent.ConcurrentHashMap}.
- * Now:
- * - cache read operations happens synchronously by simple reading from {@link java.util.concurrent.ConcurrentHashMap}.
- * - cache write operations happens through consul watch that watches consul kv store updates (that seems to be the only way to acknowledge successful write operation to consul agent kv store).
- * <p>
- * Note: given cache implementation MIGHT NOT BE mature enough to handle different sort of failures that might occur (hey, that's distributed systems world :))
  * <p>
  * Sync map's entry IS (MUST BE) EPHEMERAL.
  *
@@ -36,19 +28,16 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
 
-    private final Map<K, V> cache;
     private final Vertx vertx;
-    private final Watch<KeyValueList> watch;
     private final KeyValueOptions kvOptions;
+    private final Map<K, V> cache;
 
-    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, Watch<KeyValueList> watch, String sessionId, Map<K, V> cache) {
+    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, String sessionId, Map<K, V> haInfo) {
         super(name, cC);
         this.vertx = vx;
-        this.watch = watch;
-        this.cache = cache;
+        this.cache = CacheManager.getInstance().createAndGetCacheMap(name, true, Optional.of(haInfo));
         // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
         this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
-        watchHaInfoMap();
         printCache();
     }
 
@@ -80,7 +69,13 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     @Nullable
     @Override
     public V put(K key, V value) {
-        putValue(key, value, kvOptions);
+        putValue(key, value, kvOptions).setHandler(event -> {
+            // in case of network drop - retry.
+            if (event.failed()) {
+                log.warn("KV: '{}->'{}' has NOT been put to Consul. Retrying...'", key, value);
+                put(key, value);
+            }
+        });
         return value;
     }
 
@@ -119,37 +114,6 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         return cache.entrySet();
     }
 
-    /**
-     * Watch listens to events that are coming from Consul KV store and updates the internal cache appropriately.
-     */
-    private void watchHaInfoMap() {
-        watch
-                .setHandler(promise -> {
-                    if (promise.succeeded()) {
-                        // below is full cache update operation - this operation has be synchronized to NOT allow anyone else (any other threads) to read the cache while it's being updated.
-                        // FIXME
-                        synchronized (this) {
-                            cache.clear();
-                            if (promise.nextResult() != null && promise.nextResult().getList() != null && !promise.nextResult().getList().isEmpty()) {
-                                promise.nextResult().getList().forEach(keyValue -> {
-                                    try {
-                                        K key = (K) keyValue.getKey().replace(name + "/", "");
-                                        V value = decode(keyValue.getValue());
-                                        cache.put(key, value);
-                                    } catch (Exception e) {
-                                        log.error("Exception occurred while updating the local map: '{}'. Exception details: '{}'.", name, e.getMessage());
-                                        // don't throw any exceptions here - just ignore kv pair that can't be decoded.
-                                    }
-                                });
-                            }
-                        }
-                        log.trace("Update to local cache of : '{}'  just happened and now cache is: '{}'.", name, Json.encodePrettily(cache));
-                    } else {
-                        log.error("Failed to register a watch. Details: '{}'", promise.cause().getMessage());
-                    }
-                })
-                .start();
-    }
 
     // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.
     // TODO : removed it when consul cluster manager is more or less stable.

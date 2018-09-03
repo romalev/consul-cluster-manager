@@ -30,10 +30,12 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
     private final Vertx vertx;
+    private final Map<K, V> cache;
 
     public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC) {
         super(name, cC);
         this.vertx = vertx;
+        cache = CacheManager.getInstance().createAndGetCacheMap(name);
         printOutAsyncMap();
     }
 

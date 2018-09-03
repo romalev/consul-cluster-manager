@@ -27,12 +27,12 @@ public class ConsulAgent {
 
     private void start() {
         consul = ConsulStarterBuilder.consulStarter().withHttpPort(port).build().start();
-        log.trace("Consul test agent is up and running on port: " + port);
+        log.info("Consul test agent is up and running on port: " + port);
     }
 
     public void stop() {
         consul.close();
-        log.trace("Consul test agent has been stopped.");
+        log.info("Consul test agent has been stopped.");
     }
 
     public int getPort() {
@@ -50,6 +50,4 @@ public class ConsulAgent {
         }
         return port;
     }
-
-
 }
