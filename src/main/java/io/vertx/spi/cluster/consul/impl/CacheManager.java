@@ -46,6 +46,7 @@ public class CacheManager {
         instance.watches.forEach(Watch::stop);
         // caches eviction.
         instance.caches.values().forEach(Map::clear);
+        active = false;
     }
 
     private CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
