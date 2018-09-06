@@ -32,7 +32,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
 
     public ConsulCounter(String name, ConsulClient cC) {
         super(VERTX_COUNTERS.getName(), cC);
-        this.consulKey = getConsulKey(VERTX_COUNTERS.getName(), name);
+        this.consulKey = consulKeyPath(VERTX_COUNTERS.getName(), name);
     }
 
     @Override

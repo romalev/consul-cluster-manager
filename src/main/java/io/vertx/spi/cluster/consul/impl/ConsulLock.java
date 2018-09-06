@@ -47,7 +47,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
         getTtlSessionId(timeout, lockName)
                 .compose(s -> {
                     sessionId = Optional.of(s);
-                    return putConsulValue(getConsulKey(VERTX_LOCKS.getName(), lockName), "lockAcquired", new KeyValueOptions().setAcquireSession(s));
+                    return putConsulValue(consulKeyPath(VERTX_LOCKS.getName(), lockName), "lockAcquired", new KeyValueOptions().setAcquireSession(s));
                 })
                 .setHandler(lockAcquiredRes -> {
                     if (lockAcquiredRes.result()) {

@@ -17,12 +17,16 @@ import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
 
 
 /**
- * Implementation of READ-ONLY local IN-MEMORY cache (which is essentially concurrent hash map) that is being updated through consul watch.
+ * Implementation of local IN-MEMORY cache which is essentially concurrent hash map under the hood.
  * Now:
- * - cache read operations happens synchronously by simple reading from {@link java.util.concurrent.ConcurrentHashMap}.
- * - cache write operations happens through consul watch that watches consul kv store updates (that seems to be the only way to acknowledge successful write operation to consul agent kv store).
+ * Cache read operations happen synchronously by simply reading from {@link java.util.concurrent.ConcurrentHashMap}.
+ * Cache WRITE operations happen either:
+ * - through consul watch that monitors the consul kv store for updates (see https://www.consul.io/docs/agent/watches.html).
+ * - when consul agent acknowledges the success of write operation from local vertx node (local node's data gets immediately cached without even waiting for a watch to take place.)
+ * Note: cache update still might kick in through consul watch in case update succeeded in consul agent but wasn't yet acknowledged back to node. Eventually last write wins.
+ *
  * <p>
- * Note: given cache implementation MIGHT NOT BE mature enough to handle different sort of failures that might occur (hey, that's distributed systems world :))
+ * Note: given cache implementation MIGHT NOT BE mature enough to handle different sort of failures that might occur.
  *
  * @author Roman Levytskyi
  */
@@ -32,7 +36,7 @@ public class CacheMap<K, V> implements Map<K, V> {
 
     private final Watch<KeyValueList> watch;
     private final String name;
-    // true -> entries are to be encoded first and then put into the cache, false - plain entries are placed (as strings).
+    // true -> entries are to be encoded first and then put into the cache, false - plain entries are placed (as strings) within the cache.
     private final boolean enableDecoding;
 
     private Map<K, V> cache = new ConcurrentHashMap<>();
@@ -47,7 +51,7 @@ public class CacheMap<K, V> implements Map<K, V> {
         this.name = name;
         this.watch = watch;
         this.enableDecoding = enableDecoding;
-        map.ifPresent(kvMap -> cache.putAll(kvMap));
+        map.ifPresent(kvMap -> cache.putAll(map.get()));
         start();
     }
 
@@ -62,7 +66,7 @@ public class CacheMap<K, V> implements Map<K, V> {
     /**
      * Evicts the cache.
      */
-    public void evict() {
+    private void evict() {
         cache.clear();
     }
 
@@ -96,17 +100,17 @@ public class CacheMap<K, V> implements Map<K, V> {
     @Nullable
     @Override
     public V put(K key, V value) {
-        throw new UnsupportedOperationException();
+        return cache.put(key, value);
     }
 
     @Override
     public V remove(Object key) {
-        throw new UnsupportedOperationException();
+        return cache.remove(key);
     }
 
     @Override
     public void putAll(@NotNull Map<? extends K, ? extends V> m) {
-        throw new UnsupportedOperationException();
+        cache.putAll(m);
     }
 
     @Override

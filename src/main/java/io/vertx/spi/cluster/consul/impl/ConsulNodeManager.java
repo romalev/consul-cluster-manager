@@ -435,6 +435,7 @@ public class ConsulNodeManager {
         return futureTcp;
     }
 
+    // TODO: remove it.
     private void printLocalNodeMap() {
         vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
     }
