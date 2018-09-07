@@ -80,7 +80,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
     @Override
     public V remove(Object key) {
-        removeConsulValue(consulKeyPath(name, (K) key)).setHandler(removeHandler -> {
+        removeConsulValue(keyPath((K) key)).setHandler(removeHandler -> {
             if (removeHandler.succeeded() && removeHandler.result()) cache.remove(key);
             else remove(key);
         });

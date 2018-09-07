@@ -53,7 +53,7 @@ abstract class ConsulMap<K, V> {
         log.trace("'{}' - trying to put KV: '{}'->'{}' CKV.", name, k, v);
         return assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> encodeF(v))
-                .compose(value -> putConsulValue(consulKeyPath(name, k), value, keyValueOptions));
+                .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
     }
 
     /**
@@ -87,7 +87,7 @@ abstract class ConsulMap<K, V> {
     Future<V> getValue(K k) {
         log.trace("'{}' - getting an entry by K: '{}' from CKV.", name, k);
         return assertKeyIsNotNull(k)
-                .compose(aVoid -> getConsulKeyValue(consulKeyPath(name, k)))
+                .compose(aVoid -> getConsulKeyValue(keyPath(k)))
                 .compose(consulValue -> decodeF(consulValue.getValue()));
     }
 
@@ -200,7 +200,7 @@ abstract class ConsulMap<K, V> {
             ttl = 86400000;
         }
 
-        String consulKey = consulKeyPath(name, k);
+        String consulKey = keyPath(k);
         String sessionName = "ttlSession_" + consulKey;
         Future<String> future = Future.future();
         SessionOptions sessionOpts = new SessionOptions()
@@ -248,12 +248,14 @@ abstract class ConsulMap<K, V> {
         else return io.vertx.core.Future.succeededFuture();
     }
 
-    // FIXME : analyze whether we can remove name.
-    String consulKeyPath(String name, K k) {
+    String keyPath(K k) {
         return name + "/" + k.toString();
     }
 
-    List<KeyValue> getListResult(KeyValueList keyValueList) {
+    /**
+     * Returns NULL - safe key value list - simple wrapper around getting list out of {@link KeyValueList} instance.
+     */
+    List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
         return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
     }
 }

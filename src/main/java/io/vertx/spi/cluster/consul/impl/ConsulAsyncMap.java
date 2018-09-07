@@ -92,7 +92,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         }).compose(v -> {
             Future<V> future = Future.future();
             if (v == null) future.complete();
-            else removeConsulValue(consulKeyPath(name, k))
+            else removeConsulValue(keyPath(k))
                     .compose(removeSucceeded -> removeSucceeded ? removeSucceededFuture(k, v) : Future.failedFuture("Key + " + k + " wasn't removed."))
                     .setHandler(future.completer());
             return future;
@@ -109,12 +109,10 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
             get(k, future.completer());
             return future;
         }).compose(value -> {
-            Future<Boolean> future = Future.future();
-            if (v.equals(value)) removeConsulValue(consulKeyPath(name, k))
-                    .compose(removeSucceeded -> removeSucceeded ? removeSucceededFuture(k) : Future.failedFuture("Key + " + k + " wasn't removed."))
-                    .setHandler(future.completer());
-            else future.complete(false);
-            return future;
+            if (v.equals(value))
+                return removeConsulValue(keyPath(k))
+                        .compose(removeSucceeded -> removeSucceeded ? removeSucceededFuture(k) : Future.failedFuture("Key + " + k + " wasn't removed."));
+            else return Future.succeededFuture(false);
         }).setHandler(resultHandler);
     }
 

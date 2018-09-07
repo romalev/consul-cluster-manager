@@ -65,8 +65,6 @@ public class CacheManager {
 
     /**
      * @param name - cache's name
-     * @param <K>
-     * @param <V>
      * @return fully initialized map cache.
      */
     <K, V> Map<K, V> createAndGetCacheMap(String name) {
@@ -77,8 +75,6 @@ public class CacheManager {
     /**
      * @param name           - cache's name
      * @param enableDecoding - cache's entries have to decoded prior to be placed into the cache.
-     * @param <K>
-     * @param <V>
      * @return fully initialized map cache.
      */
     <K, V> Map<K, V> createAndGetCacheMap(String name, boolean enableDecoding) {
@@ -90,14 +86,13 @@ public class CacheManager {
      * @param name           - cache's name
      * @param enableDecoding - cache's entries have to decoded prior to be placed into the cache.
      * @param map            - map's entries to be put directly put into the cache.
-     * @param <K>
-     * @param <V>
      * @return fully initialized map cache.
      */
     <K, V> Map<K, V> createAndGetCacheMap(String name, boolean enableDecoding, Optional<Map<K, V>> map) {
         checkIfActive();
         return (Map<K, V>) caches.computeIfAbsent(name, key -> new CacheMap<>(name, enableDecoding, createAndGetMapWatch(name), map));
     }
+
 
     // LEGACY - should be removed
     Watch<ServiceList> createAndGetNodeWatch() {

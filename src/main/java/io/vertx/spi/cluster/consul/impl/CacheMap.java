@@ -138,6 +138,8 @@ public class CacheMap<K, V> implements Map<K, V> {
 
     /**
      * Implementation of watch handler to determine updates that are happening within consul KV store.
+     * <p>
+     * Note: given approach provides O(n) execution time since it is must to loop through prev and next lists of entries.
      */
     private Handler<WatchResult<KeyValueList>> getMapHandler() {
         return event -> {
