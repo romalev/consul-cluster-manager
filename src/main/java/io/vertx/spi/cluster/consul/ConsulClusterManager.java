@@ -64,9 +64,7 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public void setVertx(Vertx vertx) {
-        log.trace("Injecting Vert.x instance and Initializing consul client ...");
         this.vertx = vertx;
-
     }
 
     /**
