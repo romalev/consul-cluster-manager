@@ -11,7 +11,7 @@ import java.util.Set;
 /**
  * @author <a href="http://tfox.org">Tim Fox</a>
  */
-class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
+public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
 
     private final Set<T> ids;
     private volatile Iterator<T> iter;
@@ -66,6 +66,13 @@ class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
         } else {
             return null;
         }
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder string = new StringBuilder();
+        ids.forEach(t -> string.append(t.toString()).append(";"));
+        return string.toString();
     }
 }
 

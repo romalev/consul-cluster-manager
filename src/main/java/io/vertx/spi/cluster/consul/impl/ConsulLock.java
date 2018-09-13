@@ -8,8 +8,6 @@ import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.Optional;
 
-import static io.vertx.spi.cluster.consul.impl.ClusterManagerMaps.VERTX_LOCKS;
-
 /**
  * Consul-based implementation of an asynchronous exclusive lock which can be obtained from any node in the cluster.
  * When the lock is obtained (acquired), no-one else in the cluster can obtain the lock with the same name until the lock is released.
@@ -35,7 +33,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
     private Optional<String> sessionId = Optional.empty();
 
     public ConsulLock(String name, long timeout, ConsulClient consulClient) {
-        super(VERTX_LOCKS.getName(), consulClient);
+        super("__vertx.locks", consulClient);
         this.lockName = name;
         acquire(timeout);
     }

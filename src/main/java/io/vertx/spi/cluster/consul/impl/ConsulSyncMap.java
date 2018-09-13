@@ -6,8 +6,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.util.Collection;
 import java.util.Map;
@@ -35,7 +34,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, String sessionId, Map<K, V> haInfo) {
         super(name, cC);
         this.vertx = vx;
-        this.cache = CacheManager.getInstance().createAndGetCacheMap(name, true, Optional.of(haInfo));
+        this.cache = CacheManager.getInstance().createAndGetCacheMap(name, Optional.of(haInfo));
         // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
         this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
         printCache();
@@ -66,7 +65,6 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         return cache.get(key);
     }
 
-    @Nullable
     @Override
     public V put(K key, V value) {
         putValue(key, value, kvOptions).setHandler(putHandler -> {
@@ -99,19 +97,16 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
         });
     }
 
-    @NotNull
     @Override
     public Set<K> keySet() {
         return cache.keySet();
     }
 
-    @NotNull
     @Override
     public Collection<V> values() {
         return cache.values();
     }
 
-    @NotNull
     @Override
     public Set<Entry<K, V>> entrySet() {
         return cache.entrySet();

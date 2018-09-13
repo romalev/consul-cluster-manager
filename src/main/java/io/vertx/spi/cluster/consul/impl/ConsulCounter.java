@@ -7,8 +7,6 @@ import io.vertx.core.shareddata.Counter;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
-import static io.vertx.spi.cluster.consul.impl.ClusterManagerMaps.VERTX_COUNTERS;
-
 /**
  * Consul-based implementation of an asynchronous (distributed) counter that can be used to across the cluster to maintain a consistent count.
  * <p>
@@ -31,7 +29,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
     private final String consulKey;
 
     public ConsulCounter(String name, ConsulClient cC) {
-        super(VERTX_COUNTERS.getName(), cC);
+        super("__vertx.counters", cC);
         this.consulKey = keyPath(name);
     }
 

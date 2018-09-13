@@ -16,6 +16,7 @@ import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.impl.*;
+import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.util.List;
 import java.util.Map;

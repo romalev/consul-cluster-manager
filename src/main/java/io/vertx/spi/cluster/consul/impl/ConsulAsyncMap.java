@@ -9,6 +9,7 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
+import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.util.*;
 
@@ -54,7 +55,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     @Override
     public void put(K k, V v, Handler<AsyncResult<Void>> completionHandler) {
         putValue(k, v)
-                .compose(putSucceeded -> putSucceeded ? putSucceededFuture(k, v) : Future.failedFuture(k.toString() + "wasn't put to: " + name))
+                .compose(putSucceeded -> putSucceeded ? cacheablePut(k, v) : Future.failedFuture(k.toString() + "wasn't put to: " + name))
                 .setHandler(completionHandler);
     }
 
@@ -63,7 +64,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> getTtlSessionId(ttl, k))
                 .compose(id -> putValue(k, v, new KeyValueOptions().setAcquireSession(id)))
-                .compose(putSucceeded -> putSucceeded ? putSucceededFuture(k, v) : Future.<Void>failedFuture(k.toString() + "wasn't put to " + name))
+                .compose(putSucceeded -> putSucceeded ? cacheablePut(k, v) : Future.<Void>failedFuture(k.toString() + "wasn't put to " + name))
                 .setHandler(completionHandler);
     }
 
@@ -93,7 +94,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
             Future<V> future = Future.future();
             if (v == null) future.complete();
             else removeConsulValue(keyPath(k))
-                    .compose(removeSucceeded -> removeSucceeded ? removeSucceededFuture(k, v) : Future.failedFuture("Key + " + k + " wasn't removed."))
+                    .compose(removeSucceeded -> removeSucceeded ? cacheableRemove(k, v) : Future.failedFuture("Key + " + k + " wasn't removed."))
                     .setHandler(future.completer());
             return future;
 
@@ -111,7 +112,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         }).compose(value -> {
             if (v.equals(value))
                 return removeConsulValue(keyPath(k))
-                        .compose(removeSucceeded -> removeSucceeded ? removeSucceededFuture(k) : Future.failedFuture("Key + " + k + " wasn't removed."));
+                        .compose(removeSucceeded -> removeSucceeded ? cachealeRemove(k) : Future.failedFuture("Key + " + k + " wasn't removed."));
             else return Future.succeededFuture(false);
         }).setHandler(resultHandler);
     }
@@ -234,7 +235,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
      * @param v - holds the value.
      * @return succeeded future with updating internal cache appropriately.
      */
-    private Future<Void> putSucceededFuture(K k, V v) {
+    private Future<Void> cacheablePut(K k, V v) {
         cache.put(k, v);
         return Future.succeededFuture();
     }
@@ -243,7 +244,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
      * @param k - holds the key.
      * @return succeeded future with updating internal cache appropriately.
      */
-    private Future<Boolean> removeSucceededFuture(K k) {
+    private Future<Boolean> cachealeRemove(K k) {
         cache.remove(k);
         return Future.succeededFuture(true);
     }
@@ -253,7 +254,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
      * @param v - holds the value.
      * @return succeeded future with updating internal cache appropriately.
      */
-    private Future<V> removeSucceededFuture(K k, V v) {
+    private Future<V> cacheableRemove(K k, V v) {
         cache.remove(k);
         return Future.succeededFuture(v);
     }

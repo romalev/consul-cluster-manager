@@ -12,6 +12,7 @@ import io.vertx.core.net.NetServerOptions;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.*;
 import io.vertx.spi.cluster.consul.examples.AvailablePortFinder;
+import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -48,6 +49,7 @@ import java.util.stream.Stream;
 public class ConsulNodeManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulNodeManager.class);
+    private static final String HA_INFO = "__vertx.haInfo";
     private static final String TCP_CHECK_INTERVAL = "10s";
     private static final String NODE_COMMON_TAG = "vertx-clustering";
 
@@ -217,14 +219,14 @@ public class ConsulNodeManager {
      * @return completed future if haInfo is initialized successfully, failed future - otherwise.
      */
     private <K, V> Future<Void> initHaInfo() {
-        log.trace("Initializing: '{}' internal cache ... ", ClusterManagerMaps.VERTX_HA_INFO.getName());
+        log.trace("Initializing: '{}' internal cache ... ", HA_INFO);
         Future<Void> futureHaInfoCache = Future.future();
-        consulClient.getValues(ClusterManagerMaps.VERTX_HA_INFO.getName(), futureMap -> {
+        consulClient.getValues(HA_INFO, futureMap -> {
             if (futureMap.succeeded()) {
                 if (futureMap.result() != null && futureMap.result().getList() != null) {
                     futureMap.result().getList().forEach(keyValue -> {
                         try {
-                            K key = (K) keyValue.getKey().replace(ClusterManagerMaps.VERTX_HA_INFO.getName() + "/", "");
+                            K key = (K) keyValue.getKey().replace(HA_INFO + "/", "");
                             V value = ClusterSerializationUtils.decode(keyValue.getValue());
                             haInfoMap.put(key, value);
                         } catch (Exception e) {
@@ -232,13 +234,13 @@ public class ConsulNodeManager {
                             // don't throw any exceptions here - just ignore kv pair that can't be decoded.
                         }
                     });
-                    log.trace("'{}' internal cache is pre-built now: '{}'", ClusterManagerMaps.VERTX_HA_INFO.getName(), Json.encodePrettily(haInfoMap));
+                    log.trace("'{}' internal cache is pre-built now: '{}'", HA_INFO, Json.encodePrettily(haInfoMap));
                 } else {
-                    log.trace("'{}' seems to be empty.", ClusterManagerMaps.VERTX_HA_INFO.getName());
+                    log.trace("'{}' seems to be empty.", HA_INFO);
                 }
                 futureHaInfoCache.complete();
             } else {
-                log.trace("Can't initialize the : '{}' due to: '{}'", ClusterManagerMaps.VERTX_HA_INFO.getName(), futureMap.cause().toString());
+                log.trace("Can't initialize the : '{}' due to: '{}'", HA_INFO, futureMap.cause().toString());
                 futureHaInfoCache.fail(futureMap.cause());
             }
         });

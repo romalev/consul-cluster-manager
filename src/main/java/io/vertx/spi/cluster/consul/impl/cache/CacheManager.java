@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl;
+package io.vertx.spi.cluster.consul.impl.cache;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxException;
@@ -27,6 +27,13 @@ public class CacheManager {
     private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
     private final Vertx vertx;
     private final ConsulClientOptions cClOptns;
+    private CacheMultiMap<?, ?> cacheMultiMap;
+
+    private CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
+        this.vertx = vertx;
+        this.cClOptns = cClOptns;
+        active = true;
+    }
 
     /**
      * Initializes given cache manager.
@@ -46,56 +53,55 @@ public class CacheManager {
         instance.watches.forEach(Watch::stop);
         // caches eviction.
         instance.caches.values().forEach(Map::clear);
+        if (instance.cacheMultiMap != null) instance.cacheMultiMap.clear();
         active = false;
-    }
-
-    private CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
-        this.vertx = vertx;
-        this.cClOptns = cClOptns;
-        active = true;
     }
 
     /**
      * @return given instance of cache manager.
      */
-    static CacheManager getInstance() {
+    public static CacheManager getInstance() {
         checkIfActive();
         return instance;
+    }
+
+    /**
+     * Checks whether given cache manager is active.
+     *
+     * @throws VertxException if cache manager is not active.
+     */
+    private static void checkIfActive() {
+        if (!active) {
+            throw new VertxException("Cache manager is not active.");
+        }
     }
 
     /**
      * @param name - cache's name
      * @return fully initialized map cache.
      */
-    <K, V> Map<K, V> createAndGetCacheMap(String name) {
+    public <K, V> Map<K, V> createAndGetCacheMap(String name) {
         checkIfActive();
-        return createAndGetCacheMap(name, true, Optional.empty());
+        return createAndGetCacheMap(name, Optional.empty());
     }
 
     /**
-     * @param name           - cache's name
-     * @param enableDecoding - cache's entries have to decoded prior to be placed into the cache.
+     * @param name - cache's name
+     * @param map  - map's entries to be put directly put into the cache.
      * @return fully initialized map cache.
      */
-    <K, V> Map<K, V> createAndGetCacheMap(String name, boolean enableDecoding) {
+    public <K, V> Map<K, V> createAndGetCacheMap(String name, Optional<Map<K, V>> map) {
         checkIfActive();
-        return createAndGetCacheMap(name, enableDecoding, Optional.empty());
+        return (Map<K, V>) caches.computeIfAbsent(name, key -> new CacheMap<>(name, createAndGetMapWatch(name), map));
     }
 
-    /**
-     * @param name           - cache's name
-     * @param enableDecoding - cache's entries have to decoded prior to be placed into the cache.
-     * @param map            - map's entries to be put directly put into the cache.
-     * @return fully initialized map cache.
-     */
-    <K, V> Map<K, V> createAndGetCacheMap(String name, boolean enableDecoding, Optional<Map<K, V>> map) {
-        checkIfActive();
-        return (Map<K, V>) caches.computeIfAbsent(name, key -> new CacheMap<>(name, enableDecoding, createAndGetMapWatch(name), map));
+    public <K, V> CacheMultiMap<K, V> createAndGetCacheMultiMap(String name) {
+        cacheMultiMap = new CacheMultiMap<>(name, createAndGetMapWatch(name));
+        return (CacheMultiMap<K, V>) cacheMultiMap;
     }
-
 
     // LEGACY - should be removed
-    Watch<ServiceList> createAndGetNodeWatch() {
+    public Watch<ServiceList> createAndGetNodeWatch() {
         checkIfActive();
         Watch<ServiceList> serviceWatch = Watch.services(vertx, cClOptns);
         watches.add(serviceWatch);
@@ -109,16 +115,5 @@ public class CacheManager {
         Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
         watches.add(kvWatch);
         return kvWatch;
-    }
-
-    /**
-     * Checks whether given cache manager is active.
-     *
-     * @throws VertxException if cache manager is not active.
-     */
-    private static void checkIfActive() {
-        if (!active) {
-            throw new VertxException("Cache manager is not active.");
-        }
     }
 }

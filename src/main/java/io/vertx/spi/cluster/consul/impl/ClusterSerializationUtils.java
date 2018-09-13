@@ -13,7 +13,7 @@ import java.util.Base64;
  *
  * @author Roman Levytskyi.
  */
-class ClusterSerializationUtils {
+public class ClusterSerializationUtils {
 
     static Future<String> encodeF(Object object) {
         Future<String> future = Future.future();
@@ -49,7 +49,7 @@ class ClusterSerializationUtils {
         return encoded.toString();
     }
 
-    static <T> T decode(String bytes) throws Exception {
+    public static <T> T decode(String bytes) throws Exception {
         int index = bytes.lastIndexOf("--SEPARATOR--");
         String actualBytes = bytes.substring(0, index);
         return (T) asObject(Base64.getDecoder().decode(actualBytes.getBytes()));

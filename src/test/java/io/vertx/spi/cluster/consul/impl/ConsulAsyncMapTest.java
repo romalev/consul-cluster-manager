@@ -9,6 +9,7 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.RunTestOnContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.spi.cluster.consul.ConsulAgent;
+import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -43,6 +44,8 @@ public class ConsulAsyncMapTest {
     private static ConsulClientOptions cCOps;
     private static AsyncMap<String, String> consulAsyncMap;
 
+    private static final boolean isEmbeddedConsulAgentEnabled = true;
+
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();
 
@@ -50,10 +53,13 @@ public class ConsulAsyncMapTest {
     public static void setUp(TestContext context) {
         Async async = context.async();
         rule.vertx().executeBlocking(workerThread -> {
-            consulAgent = new ConsulAgent();
-            consulAgent.start();
-            cCOps = new ConsulClientOptions().setPort(consulAgent.getPort());
-            // cCOps = new ConsulClientOptions();
+            if (isEmbeddedConsulAgentEnabled) {
+                consulAgent = new ConsulAgent();
+                consulAgent.start();
+                cCOps = new ConsulClientOptions().setPort(consulAgent.getPort());
+            } else {
+                cCOps = new ConsulClientOptions();
+            }
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
             CacheManager.init(rule.vertx(), cCOps);
             consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, Vertx.vertx(), consulClient);
@@ -379,7 +385,7 @@ public class ConsulAsyncMapTest {
     public static void tearDown(TestContext context) {
         CacheManager.close();
         rule.vertx().close(context.asyncAssertSuccess());
-        consulAgent.stop();
+        if (isEmbeddedConsulAgentEnabled) consulAgent.stop();
     }
 
     private void sleep(Long sleepTime, TestContext context) {
