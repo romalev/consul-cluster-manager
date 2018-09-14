@@ -5,13 +5,13 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetServer;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.*;
-import io.vertx.spi.cluster.consul.examples.AvailablePortFinder;
 import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.net.InetAddress;
@@ -82,9 +82,8 @@ public class ConsulNodeManager {
      * @param resultHandler - result of async "node has joined the cluster" operation.
      */
     public void join(Handler<AsyncResult<Void>> resultHandler) {
-        getTcpAddress()
-                .compose(this::createTcpServer)
-                .compose(this::registerService)
+        createTcpServer()
+                .compose(this::registerNode)
                 .compose(this::registerTcpCheck)
                 .compose(aVoid -> registerSession())
                 .compose(aVoid -> discoverNodes())
@@ -133,7 +132,6 @@ public class ConsulNodeManager {
     public <K, V> Map<K, V> getHaInfo() {
         return haInfoMap;
     }
-
 
     /**
      * Listens for a new nodes within the cluster.
@@ -252,12 +250,12 @@ public class ConsulNodeManager {
      *
      * @return completed future if vertx node has been successfully registered in consul cluster, failed future - otherwise.
      */
-    private Future<TcpAddress> registerService(TcpAddress tcpAddress) {
-        Future<TcpAddress> future = Future.future();
+    private Future<JsonObject> registerNode(JsonObject tcpAddress) {
+        Future<JsonObject> future = Future.future();
         ServiceOptions serviceOptions = new ServiceOptions();
         serviceOptions.setName(nodeId);
-        serviceOptions.setAddress(tcpAddress.getHost());
-        serviceOptions.setPort(tcpAddress.getPort());
+        serviceOptions.setAddress(tcpAddress.getString("host"));
+        serviceOptions.setPort(tcpAddress.getInteger("port"));
         serviceOptions.setTags(Arrays.asList(NODE_COMMON_TAG));
         serviceOptions.setId(nodeId);
 
@@ -297,13 +295,13 @@ public class ConsulNodeManager {
     /**
      * Gets the node's tcp check registered within consul .
      */
-    private Future<Void> registerTcpCheck(TcpAddress tcpAddress) {
+    private Future<Void> registerTcpCheck(JsonObject tcpAddress) {
         Future<Void> future = Future.future();
         CheckOptions checkOptions = new CheckOptions()
                 .setName(checkId)
-                .setNotes("This check is dedicated to service with id :" + nodeId)
+                .setNotes("This check is dedicated to service with id: " + nodeId)
                 .setId(checkId)
-                .setTcp(tcpAddress.getHost() + ":" + tcpAddress.getPort())
+                .setTcp(tcpAddress.getString("host") + ":" + tcpAddress.getInteger("port"))
                 .setServiceId(nodeId)
                 .setInterval(TCP_CHECK_INTERVAL)
                 .setDeregisterAfter("10s") // it is still going to be 1 minute.
@@ -406,69 +404,33 @@ public class ConsulNodeManager {
     /**
      * Creates simple tcp server used to receive heart beat messages from consul cluster.
      *
-     * @param tcpAddress represents host and port of tcp server.
-     * @return in case tcp server is created and it listens for heart beat messages -> future with tcp address, otherwise -> future with message
+     * @return future with tcp address in case tcp server is created and it listens for heart beat messages, otherwise -> future with message
      * indicating the cause of the failure.
      */
-    private Future<TcpAddress> createTcpServer(final TcpAddress tcpAddress) {
-        Future<TcpAddress> future = Future.future();
-        netServer = vertx.createNetServer(new NetServerOptions().setHost(tcpAddress.getHost()).setPort(tcpAddress.getPort()));
+    private Future<JsonObject> createTcpServer() {
+        Future<JsonObject> future = Future.future();
+        JsonObject tcpAddress = new JsonObject();
+        try {
+            tcpAddress.put("host", InetAddress.getLocalHost().getHostAddress());
+        } catch (UnknownHostException e) {
+            log.error(e);
+            future.fail(e);
+        }
+        netServer = vertx.createNetServer(new NetServerOptions(tcpAddress));
         netServer.connectHandler(event -> {
         }); // node's tcp server acknowledges consul's heartbeat message.
         netServer.listen(listenEvent -> {
-            if (listenEvent.succeeded()) future.complete(tcpAddress);
-            else future.fail(listenEvent.cause());
+            if (listenEvent.succeeded()) {
+                tcpAddress.put("port", listenEvent.result().actualPort());
+                future.complete(tcpAddress);
+            } else future.fail(listenEvent.cause());
         });
         return future;
-    }
-
-    /**
-     * @return tcp address that later on gets exposed to acknowledge heartbeats messages from consul (tcp checker sends them).
-     */
-    private Future<TcpAddress> getTcpAddress() {
-        Future<TcpAddress> futureTcp = Future.future();
-        try {
-            int port = AvailablePortFinder.find(2000, 64000);
-            futureTcp.complete(new TcpAddress(InetAddress.getLocalHost().getHostAddress(), port));
-        } catch (UnknownHostException e) {
-            log.error("Can't get the host address: '{}'", e.getCause().toString());
-            futureTcp.fail(e);
-        }
-        return futureTcp;
     }
 
     // TODO: remove it.
     private void printLocalNodeMap() {
         vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
-    }
-
-    /**
-     * Simple representation of tcp address.
-     */
-    private final class TcpAddress {
-        private final String host;
-        private final int port;
-
-        public TcpAddress(String host, int port) {
-            this.host = host;
-            this.port = port;
-        }
-
-        public String getHost() {
-            return host;
-        }
-
-        public int getPort() {
-            return port;
-        }
-
-        @Override
-        public String toString() {
-            return "TcpAddress{" +
-                    "host='" + host + '\'' +
-                    ", port=" + port +
-                    '}';
-        }
     }
 
     /**
