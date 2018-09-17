@@ -43,6 +43,7 @@ public class ConsulAsyncMapTest {
     private static ConsulClient consulClient;
     private static ConsulClientOptions cCOps;
     private static AsyncMap<String, String> consulAsyncMap;
+    private static CacheManager cacheManager;
 
     private static final boolean isEmbeddedConsulAgentEnabled = true;
 
@@ -61,8 +62,8 @@ public class ConsulAsyncMapTest {
                 cCOps = new ConsulClientOptions();
             }
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
-            CacheManager.init(rule.vertx(), cCOps);
-            consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, Vertx.vertx(), consulClient);
+            cacheManager = new CacheManager(rule.vertx(), cCOps);
+            consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, Vertx.vertx(), consulClient, cacheManager);
             workerThread.complete();
         }, res -> {
             if (res.succeeded()) {
@@ -383,7 +384,7 @@ public class ConsulAsyncMapTest {
 
     @AfterClass
     public static void tearDown(TestContext context) {
-        CacheManager.close();
+        cacheManager.close();
         rule.vertx().close(context.asyncAssertSuccess());
         if (isEmbeddedConsulAgentEnabled) consulAgent.stop();
     }

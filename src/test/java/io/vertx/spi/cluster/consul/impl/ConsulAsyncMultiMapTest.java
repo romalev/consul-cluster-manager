@@ -50,6 +50,7 @@ public class ConsulAsyncMultiMapTest {
     private static ConsulClientOptions cCOps;
     private static AsyncMultiMap<String, ClusterNodeInfo> consulAsyncMultiMapNodeA;
     private static AsyncMultiMap<String, ClusterNodeInfo> consulAsyncMultiMapNodeB;
+    private static CacheManager cacheManager;
 
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();
@@ -66,18 +67,18 @@ public class ConsulAsyncMultiMapTest {
                 cCOps = new ConsulClientOptions();
             }
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
-            CacheManager.init(rule.vertx(), cCOps);
+            cacheManager = new CacheManager(rule.vertx(), cCOps);
             workerThread.complete();
         }, res ->
                 // creating two maps (this sort simulates the situation with two nodes that are subscribed to event bus)
                 consulClient.createSession(sessionIdForNodeA -> {
                     if (sessionIdForNodeA.failed()) context.fail(sessionIdForNodeA.cause());
                     else {
-                        consulAsyncMultiMapNodeA = new ConsulAsyncMultiMap<>(MAP_NAME, rule.vertx(), consulClient, sessionIdForNodeA.result(), nodeA);
+                        consulAsyncMultiMapNodeA = new ConsulAsyncMultiMap<>(MAP_NAME, rule.vertx(), consulClient, cacheManager, sessionIdForNodeA.result(), nodeA);
                         consulClient.createSession(sessionIdForNodeB -> {
                             if (sessionIdForNodeB.failed()) context.fail(sessionIdForNodeB.cause());
                             else {
-                                consulAsyncMultiMapNodeB = new ConsulAsyncMultiMap<>(MAP_NAME, rule.vertx(), consulClient, sessionIdForNodeB.result(), nodeB);
+                                consulAsyncMultiMapNodeB = new ConsulAsyncMultiMap<>(MAP_NAME, rule.vertx(), consulClient, cacheManager, sessionIdForNodeB.result(), nodeB);
                                 async.complete();
                             }
                         });
@@ -200,7 +201,7 @@ public class ConsulAsyncMultiMapTest {
 
     @AfterClass
     public static void tearDown(TestContext context) {
-        CacheManager.close();
+        cacheManager.close();
         rule.vertx().close(context.asyncAssertSuccess());
         if (isEmbeddedConsulAgentEnabled) consulAgent.stop();
     }

@@ -19,8 +19,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public class CacheManager {
 
-    private static CacheManager instance;
-    private static boolean active;
+    private boolean active;
     private final Map<String, Map<?, ?>> caches = new ConcurrentHashMap<>();
     // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches must be stopped.
     private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
@@ -28,40 +27,22 @@ public class CacheManager {
     private final ConsulClientOptions cClOptns;
     private CacheMultiMap<?, ?> cacheMultiMap;
 
-    private CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
+    public CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
         this.vertx = vertx;
         this.cClOptns = cClOptns;
         active = true;
     }
 
     /**
-     * Initializes given cache manager.
-     *
-     * @param vertx    - vertx object.
-     * @param cClOptns - consul client options.
-     */
-    public static void init(Vertx vertx, ConsulClientOptions cClOptns) {
-        instance = new CacheManager(vertx, cClOptns);
-    }
-
-    /**
      * Closes given cache manager.
      */
-    public static void close() {
+    public void close() {
         // stopping all started watches.
-        instance.watches.forEach(Watch::stop);
+        watches.forEach(Watch::stop);
         // caches eviction.
-        instance.caches.values().forEach(Map::clear);
-        if (instance.cacheMultiMap != null) instance.cacheMultiMap.clear();
+        caches.values().forEach(Map::clear);
+        if (cacheMultiMap != null) cacheMultiMap.clear();
         active = false;
-    }
-
-    /**
-     * @return given instance of cache manager.
-     */
-    public static CacheManager getInstance() {
-        checkIfActive();
-        return instance;
     }
 
     /**
@@ -69,7 +50,7 @@ public class CacheManager {
      *
      * @throws VertxException if cache manager is not active.
      */
-    private static void checkIfActive() {
+    private void checkIfActive() {
         if (!active) {
             throw new VertxException("Cache manager is not active.");
         }

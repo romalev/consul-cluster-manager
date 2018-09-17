@@ -54,6 +54,7 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
     private static final String TCP_CHECK_INTERVAL = "10s";
 
     private final Vertx vertx;
+    private final CacheManager cM;
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
@@ -66,10 +67,11 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
     private String sessionId;
     private NodeListener nodeListener;
 
-    public ConsulNodeManager(Vertx vertx, ConsulClient consulClient, String nodeId) {
-        super("__vertx.nodes", consulClient);
+    public ConsulNodeManager(Vertx vertx, ConsulClient cC, CacheManager cM, String nodeId) {
+        super("__vertx.nodes", cC);
         this.vertx = vertx;
         this.nodeId = nodeId;
+        this.cM = cM;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
         printLocalNodeMap();
@@ -152,7 +154,7 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
 
     public void initNodeListener(NodeListener nodeListener) {
         this.nodeListener = nodeListener;
-        Watch<KeyValueList> watch = CacheManager.getInstance().createAndGetMapWatch(name);
+        Watch<KeyValueList> watch = cM.createAndGetMapWatch(name);
         watch.setHandler(kvWatchHandler()).start();
     }
 
