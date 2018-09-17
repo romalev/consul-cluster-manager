@@ -131,7 +131,7 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public void nodeListener(NodeListener listener) {
         log.trace("Initializing the node listener...");
-        nodeManager.watchNewNodes(listener).start();
+        nodeManager.initNodeListener(listener);
     }
 
     @Override

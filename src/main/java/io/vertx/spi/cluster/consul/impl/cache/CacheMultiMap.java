@@ -19,7 +19,7 @@ import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
  *
  * @author Roman Levytskyi
  */
-public class CacheMultiMap<K, V> extends CacheListener {
+public class CacheMultiMap<K, V> implements KvStoreListener {
 
     private static final Logger log = LoggerFactory.getLogger(CacheMultiMap.class);
     private final String name;
@@ -100,25 +100,24 @@ public class CacheMultiMap<K, V> extends CacheListener {
     }
 
     @Override
-    protected void addOrUpdateEvent(KeyValue keyValue) {
-        log.trace("Adding: '{}'->'{}' to internal cache.", keyValue.getKey(), keyValue.getValue());
-        try {
-            K key = (K) getEventBusAddress(keyValue.getKey());
-            V value = decode(keyValue.getValue());
-            put(key, value);
-        } catch (Exception e) {
-            log.error("Exception occurred while updating the internal cache: '{}'. Exception details: '{}'.", name, e.getMessage());
+    public void event(Event event) {
+        switch (event.getEventType()) {
+            case WRITE: {
+                log.trace("Adding: '{}'->'{}' to internal cache.", event.getEntry().getKey(), event.getEntry().getValue());
+                try {
+                    K key = (K) getEventBusAddress(event.getEntry().getKey());
+                    V value = decode(event.getEntry().getValue());
+                    put(key, value);
+                } catch (Exception e) {
+                    log.error("Exception occurred while updating the internal cache: '{}'. Exception details: '{}'.", name, e.getMessage());
+                }
+                break;
+            }
+            case REMOVE: {
+                remove(event.getEntry());
+                break;
+            }
         }
-    }
-
-    @Override
-    protected void removeEvent(KeyValue keyValue) {
-        remove(keyValue);
-    }
-
-    @Override
-    public String toString() {
-        return cache.toString();
     }
 
     /**

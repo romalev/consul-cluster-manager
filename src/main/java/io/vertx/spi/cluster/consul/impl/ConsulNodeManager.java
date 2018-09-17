@@ -13,29 +13,30 @@ import io.vertx.core.net.NetServerOptions;
 import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.*;
 import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
+import io.vertx.spi.cluster.consul.impl.cache.KvStoreListener;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Main manager is accountable for:
  * <p>
- * - Node registration within the cluster. Every new consul service corresponds to new vertx node, ie - mapping is: vertx.node <-> consul service. Don't confuse
- * vertx node with consul (native) node - these are completely different things.
- * IMPORTANT: every vetx nodes that joins the cluster IS AND MUST BE tagged with NODE_COMMON_TAG = "vertx-clustering".
+ * - Node registration within the cluster. Every new consul service and new entry within __vertx.nodes represent actual vertx node.
+ * Don't confuse vertx node with consul (native) node - these are completely different things.
+ * Note: every vetx nodes that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".
  * <p>
- * - Node discovery. Nodes discovery happens at the stage where new node is joining the cluster and then it discovers other nodes (consul services).
+ * - Node discovery. Nodes discovery for a new node happening while this new node is joining the cluster - it looks up all entry withing __vertx.nodes.
  * <p>
  * - HaInfo pre-initialization. We need to pre-build haInfo map at the "node is joining" stage to be able later on to properly
  * initialize the consul sync map. We can't block the event loop thread that gets the consul sync map. (Consul sync map holds haInfo.)
  * <p>
  * - Creating dummy TCP server to receive and acknowledge heart beats messages from consul.
  * <p>
- * - Creating TCP check that is to be mapped to ONLY vertx node (consul service). TCP check "tells" consul agent to send heartbeat message to vertx nodes.
+ * - Creating TCP check on the consul side that sends heart beats messages to previously mentioned tcp server - this allow consul agent to be aware of
+ * what is going on within the cluster (node is active if it acknowledges hear beat message, inactive - otherwise.)
  * <p>
  * - Creating consul session. Consul session is used to make consul map entries ephemeral (every entry with that is created with special KV options referencing session id gets automatically deleted
  * from the consul cluster once session gets invalidated).
@@ -46,29 +47,28 @@ import java.util.stream.Stream;
  *
  * @author Roman Levytskyi
  */
-public class ConsulNodeManager {
+public class ConsulNodeManager extends ConsulMap<String, String> implements KvStoreListener {
 
     private static final Logger log = LoggerFactory.getLogger(ConsulNodeManager.class);
-    private static final String HA_INFO = "__vertx.haInfo";
+    private static final String HA_INFO_MAP = "__vertx.haInfo";
     private static final String TCP_CHECK_INTERVAL = "10s";
-    private static final String NODE_COMMON_TAG = "vertx-clustering";
 
     private final Vertx vertx;
-    private final ConsulClient consulClient;
     private final String nodeId;
     private final String checkId;
     private final String sessionName;
-    // dedicated cache to initialize and keep haInfo.
-    private final Map haInfoMap = new ConcurrentHashMap<>();
-    private NetServer netServer;
+    private final Map haInfoMap = new ConcurrentHashMap<>(); // dedicated cache to initialize and keep haInfo.
+    private JsonObject tcpAddress = new JsonObject(); // tcp address of node.
     // local cache of all vertx cluster nodes.
-    private Set<String> nodes;
+    private Set<String> nodes = new HashSet<>();
+    private NetServer netServer;
     // consul session id used to lock map entries.
     private String sessionId;
+    private NodeListener nodeListener;
 
     public ConsulNodeManager(Vertx vertx, ConsulClient consulClient, String nodeId) {
+        super("__vertx.nodes", consulClient);
         this.vertx = vertx;
-        this.consulClient = consulClient;
         this.nodeId = nodeId;
         this.checkId = "tcpCheckFor-" + nodeId;
         this.sessionName = "sessionFor-" + nodeId;
@@ -77,35 +77,31 @@ public class ConsulNodeManager {
 
 
     /**
-     * Asynchronously lets vertx node join the cluster.
-     *
-     * @param resultHandler - result of async "node has joined the cluster" operation.
+     * Joins node with the cluster in async manner.
      */
     public void join(Handler<AsyncResult<Void>> resultHandler) {
         createTcpServer()
-                .compose(this::registerNode)
-                .compose(this::registerTcpCheck)
+                .compose(aVoid -> registerService())
+                .compose(aVoid -> registerTcpCheck())
                 .compose(aVoid -> registerSession())
+                .compose(aVoid -> registerNode())
                 .compose(aVoid -> discoverNodes())
                 .compose(aVoid -> initHaInfo())
                 .setHandler(resultHandler);
     }
 
     /**
-     * Asynchronously let the vertx node leave the cluster.
-     *
-     * @param resultHandler - result of async "node has left the cluster" operation.
+     * Node leaving the cluster.
      */
     public void leave(Handler<AsyncResult<Void>> resultHandler) {
         Future.succeededFuture()
                 .compose(aVoid -> {
-                    nodes.clear();
                     haInfoMap.clear();
                     netServer.close();
                     return Future.<Void>succeededFuture();
                 })
                 .compose(aVoid -> destroySession())
-                .compose(aVoid -> deregisterService())
+                .compose(aVoid -> deregisterNode())
                 .compose(aVoid -> deregisterTcpCheck())
                 .setHandler(resultHandler);
     }
@@ -124,6 +120,43 @@ public class ConsulNodeManager {
         return sessionId;
     }
 
+    @Override
+    public void event(Event event) {
+        vertx.executeBlocking(workingThread -> {
+            String receivedNodeId = event.getEntry().getKey().replace(name + "/", "");
+            switch (event.getEventType()) {
+                case WRITE: {
+                    log.trace("Node: '{}' has joined the cluster.", receivedNodeId);
+                    nodes.add(receivedNodeId);
+                    if (nodeListener != null) {
+                        log.trace("Adding new node: '{}' to nodeListener.", receivedNodeId);
+                        nodeListener.nodeAdded(receivedNodeId);
+                    }
+                    break;
+                }
+                case REMOVE: {
+                    nodes.remove(receivedNodeId);
+                    log.trace("Node: '{}' has left the cluster.", receivedNodeId);
+                    if (nodeListener != null) {
+                        log.trace("Removing an existing node: '{}' from nodeListener.", receivedNodeId);
+                        nodeListener.nodeLeft(receivedNodeId);
+                    }
+                    break;
+                }
+            }
+            workingThread.complete();
+        }, result -> {
+        });
+
+    }
+
+    public void initNodeListener(NodeListener nodeListener) {
+        this.nodeListener = nodeListener;
+        Watch<KeyValueList> watch = CacheManager.getInstance().createAndGetMapWatch(name);
+        watch.setHandler(kvWatchHandler()).start();
+    }
+
+
     /**
      * @param <K> represents key type (in haIfoMap it is a simple string)
      * @param <V> represents value type (in haIfoMap it is a simple string)
@@ -134,82 +167,6 @@ public class ConsulNodeManager {
     }
 
     /**
-     * Listens for a new nodes within the cluster.
-     * Leaky design
-     */
-    public Watch watchNewNodes(NodeListener nodeListener) {
-        // - tricky !!! watchers are always executed  within the event loop context !!!
-        // - nodeAdded() call must NEVER be called within event loop context ???!!!.
-        return CacheManager.getInstance().createAndGetNodeWatch().setHandler(event -> {
-            if (event.succeeded()) {
-                vertx.executeBlocking(blockingEvent -> {
-                    synchronized (this) {
-                        NodeWatchResult watchResult = getWatchResult(event.prevResult(), event.nextResult());
-                        if (watchResult.nodesJoined()) {
-                            watchResult.getNodeIds().forEach(joinedNodeId -> {
-                                log.trace("New node: '{}' has joined  the cluster.", joinedNodeId);
-                                nodes.add(joinedNodeId);
-                                if (nodeListener != null) {
-                                    log.trace("Adding new node: '{}' to nodeListener.", joinedNodeId);
-                                    nodeListener.nodeAdded(nodeId);
-                                }
-                            });
-                        } else {
-                            watchResult.getNodeIds().forEach(leftNodeId -> {
-                                log.trace("Node: '{}' has left the cluster.", leftNodeId);
-                                nodes.remove(leftNodeId);
-                                if (nodeListener != null) {
-                                    log.trace("Removing an existing node: '{}' from nodeListener.", leftNodeId);
-                                }
-                            });
-                        }
-                        blockingEvent.complete();
-                    }
-                }, result -> {
-                });
-            } else {
-                log.error("Couldn't register watcher for service: '{}'. Details: '{}'", nodeId, event.cause().getMessage());
-            }
-        });
-    }
-
-    /**
-     * Determines the result of watch operation i.e. whether new nodes have joined the cluster or existing nodes left the
-     * cluster.
-     * Based on prevServiceList and nextServiceList we can figure out which nodes have exactly joined or left the cluster.
-     *
-     * @param prevServiceList previous consul service list.
-     * @param nextServiceList next consul service list.
-     * @return dedicated node watch result holding boolean flag indicating whether node(s) has(ve) joined the cluster or left if + corresponding node(s) id(s).
-     */
-    private NodeWatchResult getWatchResult(ServiceList prevServiceList, ServiceList nextServiceList) {
-        List<String> prevList = getNodeStream(prevServiceList).collect(Collectors.toList());
-        List<String> nextList = getNodeStream(nextServiceList).collect(Collectors.toList());
-
-        if (nextList.size() > prevList.size()) {
-            nextList.removeAll(prevList);
-            return new NodeWatchResult(true, nextList.stream());
-        } else if (nextList.size() < prevList.size()) {
-            prevList.removeAll(nextList);
-            return new NodeWatchResult(false, nextList.stream());
-        } else {
-            // theoretically this should never happen.
-            return new NodeWatchResult(true, Stream.empty());
-        }
-    }
-
-    /**
-     * Filters out only the services tagged with NODE_COMMON_TAG - vertx nodes within the cluster.
-     *
-     * @param serviceList holds all the services available within the consul cluster.
-     * @return filtered stream by common tag containing vertx node ids.
-     */
-    private Stream<String> getNodeStream(ServiceList serviceList) {
-        // TODO: is filtering by this [this] nodeId needed ?
-        return serviceList == null || serviceList.getList() == null ? Stream.empty() : serviceList.getList().stream().filter(service -> service.getTags().contains(NODE_COMMON_TAG)).map(Service::getName);
-    }
-
-    /**
      * Initializes haInfo map.
      *
      * @param <K> represents key type (in haIfoMap it is a simple string)
@@ -217,28 +174,25 @@ public class ConsulNodeManager {
      * @return completed future if haInfo is initialized successfully, failed future - otherwise.
      */
     private <K, V> Future<Void> initHaInfo() {
-        log.trace("Initializing: '{}' internal cache ... ", HA_INFO);
+        log.trace("Initializing: '{}' internal cache ... ", HA_INFO_MAP);
         Future<Void> futureHaInfoCache = Future.future();
-        consulClient.getValues(HA_INFO, futureMap -> {
+        consulClient.getValues(HA_INFO_MAP, futureMap -> {
             if (futureMap.succeeded()) {
-                if (futureMap.result() != null && futureMap.result().getList() != null) {
-                    futureMap.result().getList().forEach(keyValue -> {
-                        try {
-                            K key = (K) keyValue.getKey().replace(HA_INFO + "/", "");
-                            V value = ClusterSerializationUtils.decode(keyValue.getValue());
-                            haInfoMap.put(key, value);
-                        } catch (Exception e) {
-                            log.trace("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
-                            // don't throw any exceptions here - just ignore kv pair that can't be decoded.
-                        }
-                    });
-                    log.trace("'{}' internal cache is pre-built now: '{}'", HA_INFO, Json.encodePrettily(haInfoMap));
-                } else {
-                    log.trace("'{}' seems to be empty.", HA_INFO);
-                }
+                List<KeyValue> keyValueList = getKeyValueListOrEmptyList(futureMap.result());
+                keyValueList.forEach(keyValue -> {
+                    try {
+                        K key = (K) keyValue.getKey().replace(HA_INFO_MAP + "/", "");
+                        V value = ClusterSerializationUtils.decode(keyValue.getValue());
+                        haInfoMap.put(key, value);
+                    } catch (Exception e) {
+                        log.trace("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
+                        // don't throw any exceptions here - just ignore kv pair that can't be decoded.
+                    }
+                });
+                log.trace("'{}' internal cache is pre-built now: '{}'", HA_INFO_MAP, Json.encodePrettily(haInfoMap));
                 futureHaInfoCache.complete();
             } else {
-                log.trace("Can't initialize the : '{}' due to: '{}'", HA_INFO, futureMap.cause().toString());
+                log.error("Can't initialize the : '{}' due to: '{}'", HA_INFO_MAP, futureMap.cause().toString());
                 futureHaInfoCache.fail(futureMap.cause());
             }
         });
@@ -246,29 +200,35 @@ public class ConsulNodeManager {
     }
 
     /**
-     * Gets the vertx node registered within consul cluster.
-     *
-     * @return completed future if vertx node has been successfully registered in consul cluster, failed future - otherwise.
+     * Gets the vertx node's dedicated service registered within consul agent.
      */
-    private Future<JsonObject> registerNode(JsonObject tcpAddress) {
-        Future<JsonObject> future = Future.future();
+    private Future<Void> registerService() {
+        Future<Void> future = Future.future();
         ServiceOptions serviceOptions = new ServiceOptions();
         serviceOptions.setName(nodeId);
         serviceOptions.setAddress(tcpAddress.getString("host"));
         serviceOptions.setPort(tcpAddress.getInteger("port"));
-        serviceOptions.setTags(Arrays.asList(NODE_COMMON_TAG));
+        serviceOptions.setTags(Collections.singletonList("vertx-clustering"));
         serviceOptions.setId(nodeId);
 
-        consulClient.registerService(serviceOptions, event -> {
-            if (event.succeeded()) {
-                log.trace("Node: {} has been registered.", nodeId);
-                future.complete(tcpAddress);
-            } else {
-                log.error("Node: '{}' failed to register due to: '{}'", future.cause().toString());
-                // closing the net server here.
+        consulClient.registerService(serviceOptions, asyncResult -> {
+            if (asyncResult.failed()) {
                 netServer.close();
-                future.fail(event.cause());
-            }
+                log.error("Can't register node: '{}' due to: '{}'", nodeId, asyncResult.cause());
+                future.fail(asyncResult.cause());
+            } else future.complete();
+        });
+        return future;
+    }
+
+    private Future<Void> registerNode() {
+        Future<Void> future = Future.future();
+        putValue(nodeId, tcpAddress.encode(), new KeyValueOptions().setAcquireSession(sessionId)).setHandler(asyncResult -> {
+            if (asyncResult.failed()) {
+                netServer.close();
+                log.error("Can't add node: '{}' to: '{}' due to: '{}'", nodeId, name, asyncResult.cause());
+                future.fail(asyncResult.cause());
+            } else future.complete();
         });
         return future;
     }
@@ -278,14 +238,14 @@ public class ConsulNodeManager {
      *
      * @return completed future if vertx node has been successfully de-registered from consul cluster, failed future - otherwise.
      */
-    private Future<Void> deregisterService() {
+    private Future<Void> deregisterNode() {
         Future<Void> future = Future.future();
         consulClient.deregisterService(nodeId, event -> {
             if (event.succeeded()) {
                 log.trace("'{}' has been unregistered.");
                 future.complete();
             } else {
-                log.error("Couldn't unregister service: '{}' due to: '{}'", nodeId, event.cause().toString());
+                log.error("Couldn't unregister node: '{}' due to: '{}'", nodeId, event.cause().toString());
                 future.fail(event.cause());
             }
         });
@@ -295,7 +255,7 @@ public class ConsulNodeManager {
     /**
      * Gets the node's tcp check registered within consul .
      */
-    private Future<Void> registerTcpCheck(JsonObject tcpAddress) {
+    private Future<Void> registerTcpCheck() {
         Future<Void> future = Future.future();
         CheckOptions checkOptions = new CheckOptions()
                 .setName(checkId)
@@ -314,7 +274,7 @@ public class ConsulNodeManager {
             } else {
                 log.trace("Can't register check: '{}' due to: '{}'", checkOptions.getId(), result.cause().toString());
                 // try to de-register the node from consul cluster
-                deregisterService();
+                deregisterNode();
                 future.fail(result.cause());
             }
         });
@@ -327,10 +287,8 @@ public class ConsulNodeManager {
     private Future<Void> deregisterTcpCheck() {
         Future<Void> future = Future.future();
         consulClient.deregisterCheck(checkId, resultHandler -> {
-            if (resultHandler.succeeded()) {
-                log.trace("Check: '{}' for node: '{}' has been deregitered.", checkId, nodeId);
-                future.complete();
-            } else {
+            if (resultHandler.succeeded()) future.complete();
+            else {
                 log.error("Can't deregister check: '{}' for node: '{}' due to: '{}'", checkId, nodeId, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
@@ -345,18 +303,14 @@ public class ConsulNodeManager {
      * failed future - otherwise.
      */
     private Future<Void> discoverNodes() {
-        log.trace("Trying to fetch all the nodes that are available within the consul cluster.");
-        Future<Void> futureNodes = Future.future();
-        consulClient.catalogServices(result -> {
-            if (result.succeeded()) {
-                nodes = getNodeStream(result.result()).collect(Collectors.toSet());
-                log.trace("List of fetched nodes is: '{}'", nodes);
-                futureNodes.complete();
-            } else {
-                futureNodes.fail(result.cause());
-            }
-        });
-        return futureNodes;
+        log.trace("Trying to discover nodes that are available within the consul cluster.");
+        return consulKeys()
+                .compose(list -> {
+                    if (list == null) return Future.succeededFuture();
+                    nodes = list.stream().map(s -> s.replace(name + "/", "")).collect(Collectors.toSet());
+                    log.trace("Available nodes within the cluster: '{}'", nodes);
+                    return Future.succeededFuture();
+                });
     }
 
     /**
@@ -402,14 +356,10 @@ public class ConsulNodeManager {
     }
 
     /**
-     * Creates simple tcp server used to receive heart beat messages from consul cluster.
-     *
-     * @return future with tcp address in case tcp server is created and it listens for heart beat messages, otherwise -> future with message
-     * indicating the cause of the failure.
+     * Creates simple tcp server used to receive heart beat messages from consul cluster and acknowledge them.
      */
-    private Future<JsonObject> createTcpServer() {
-        Future<JsonObject> future = Future.future();
-        JsonObject tcpAddress = new JsonObject();
+    private Future<Void> createTcpServer() {
+        Future<Void> future = Future.future();
         try {
             tcpAddress.put("host", InetAddress.getLocalHost().getHostAddress());
         } catch (UnknownHostException e) {
@@ -422,7 +372,7 @@ public class ConsulNodeManager {
         netServer.listen(listenEvent -> {
             if (listenEvent.succeeded()) {
                 tcpAddress.put("port", listenEvent.result().actualPort());
-                future.complete(tcpAddress);
+                future.complete();
             } else future.fail(listenEvent.cause());
         });
         return future;
@@ -431,26 +381,5 @@ public class ConsulNodeManager {
     // TODO: remove it.
     private void printLocalNodeMap() {
         vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
-    }
-
-    /**
-     * Simple result holder of watching vertx nodes (consul services).
-     */
-    private final class NodeWatchResult {
-        private final boolean nodesJoined;
-        private Stream<String> nodeIds;
-
-        public NodeWatchResult(boolean nodesJoined, Stream<String> nodeIds) {
-            this.nodesJoined = nodesJoined;
-            this.nodeIds = nodeIds;
-        }
-
-        public boolean nodesJoined() {
-            return nodesJoined;
-        }
-
-        public Stream<String> getNodeIds() {
-            return nodeIds;
-        }
     }
 }

@@ -4,7 +4,6 @@ import io.vertx.core.Vertx;
 import io.vertx.core.VertxException;
 import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.ServiceList;
 import io.vertx.ext.consul.Watch;
 
 import java.util.Map;
@@ -100,18 +99,10 @@ public class CacheManager {
         return (CacheMultiMap<K, V>) cacheMultiMap;
     }
 
-    // LEGACY - should be removed
-    public Watch<ServiceList> createAndGetNodeWatch() {
-        checkIfActive();
-        Watch<ServiceList> serviceWatch = Watch.services(vertx, cClOptns);
-        watches.add(serviceWatch);
-        return serviceWatch;
-    }
-
     /**
      * Creates consul (kv store specific) watch.
      */
-    private Watch<KeyValueList> createAndGetMapWatch(String mapName) {
+    public Watch<KeyValueList> createAndGetMapWatch(String mapName) {
         Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
         watches.add(kvWatch);
         return kvWatch;
