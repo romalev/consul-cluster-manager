@@ -27,10 +27,10 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private final Vertx vertx;
     private final Map<K, V> cache;
 
-    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC) {
+    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC, CacheManager cM) {
         super(name, cC);
         this.vertx = vertx;
-        cache = CacheManager.getInstance().createAndGetCacheMap(name);
+        cache = cM.createAndGetCacheMap(name);
         // TODO : REMOVE IT.
         printOutAsyncMap();
     }

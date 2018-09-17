@@ -46,11 +46,11 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     private final KeyValueOptions kvOpts;
     private final CacheMultiMap<K, V> cache;
 
-    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient consulClient, String sessionId, String nodeId) {
-        super(name, consulClient);
+    public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient cC, CacheManager cM, String sessionId, String nodeId) {
+        super(name, cC);
         this.vertx = vertx;
         this.nodeId = nodeId;
-        this.cache = CacheManager.getInstance().createAndGetCacheMultiMap(name);
+        this.cache = cM.createAndGetCacheMultiMap(name);
         // options to make entries of this map ephemeral.
         this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
         // TODO: remove it.

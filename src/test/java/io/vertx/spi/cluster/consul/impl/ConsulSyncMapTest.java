@@ -35,6 +35,7 @@ public class ConsulSyncMapTest {
     private static ConsulClient consulClient;
     private static ConsulClientOptions cCOps;
     private static ConsulSyncMap<String, String> consulSyncMap;
+    private static CacheManager cacheManager;
 
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();
@@ -47,12 +48,12 @@ public class ConsulSyncMapTest {
             consulAgent.start();
             cCOps = new ConsulClientOptions().setPort(consulAgent.getPort());
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
-            CacheManager.init(rule.vertx(), cCOps);
+            cacheManager = new CacheManager(rule.vertx(), cCOps);
             event.complete();
         }, res ->
                 createConsulSessionId()
                         .compose(s -> {
-                            consulSyncMap = new ConsulSyncMap<>(MAP_NAME, rule.vertx(), consulClient, s, new ConcurrentHashMap<>());
+                            consulSyncMap = new ConsulSyncMap<>(MAP_NAME, rule.vertx(), consulClient, cacheManager, s, new ConcurrentHashMap<>());
                             return Future.succeededFuture();
                         })
                         .setHandler(event -> {
@@ -116,7 +117,7 @@ public class ConsulSyncMapTest {
 
     @AfterClass
     public static void tearDown(TestContext context) {
-        CacheManager.close();
+        cacheManager.close();
         rule.vertx().close(context.asyncAssertSuccess());
         consulAgent.stop();
     }

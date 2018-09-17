@@ -48,7 +48,8 @@ public class ConsulClusterManager implements ClusterManager {
     private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
     private Vertx vertx;
     private ConsulClient cC;
-    private ConsulNodeManager nodeManager;
+    private ConsulNodeManager nM;
+    private CacheManager cM;
     private volatile boolean active;
 
     public ConsulClusterManager(final ConsulClientOptions options) {
@@ -79,7 +80,7 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async multimap by name: '{}'", name);
         Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-        AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, nodeManager.getSessionId(), nodeId));
+        AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cM, nM.getSessionId(), nodeId));
         futureMultiMap.complete(asyncMultiMap);
         futureMultiMap.setHandler(asyncResultHandler);
     }
@@ -88,15 +89,15 @@ public class ConsulClusterManager implements ClusterManager {
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC));
+        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, cM));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
     }
 
     @Override
     public <K, V> Map<K, V> getSyncMap(String name) {
-        log.trace("Getting sync map by name: '{}' with initial cache: '{}'", name, Json.encodePrettily(nodeManager.getHaInfo()));
-        return new ConsulSyncMap<>(name, vertx, cC, nodeManager.getSessionId(), nodeManager.getHaInfo());
+        log.trace("Getting sync map by name: '{}' with initial cache: '{}'", name, Json.encodePrettily(nM.getHaInfo()));
+        return new ConsulSyncMap<>(name, vertx, cC, cM, nM.getSessionId(), nM.getHaInfo());
     }
 
     @Override
@@ -125,13 +126,13 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public List<String> getNodes() {
-        return nodeManager.getNodes();
+        return nM.getNodes();
     }
 
     @Override
     public void nodeListener(NodeListener listener) {
         log.trace("Initializing the node listener...");
-        nodeManager.initNodeListener(listener);
+        nM.initNodeListener(listener);
     }
 
     @Override
@@ -142,12 +143,12 @@ public class ConsulClusterManager implements ClusterManager {
             active = true;
             try {
                 cC = ConsulClient.create(vertx, cClOptns);
-                nodeManager = new ConsulNodeManager(vertx, cC, nodeId);
-                CacheManager.init(vertx, cClOptns);
+                cM = new CacheManager(vertx, cClOptns);
+                nM = new ConsulNodeManager(vertx, cC, cM, nodeId);
             } catch (final Exception e) {
                 future.fail(e);
             }
-            nodeManager.join(future.completer());
+            nM.join(future.completer());
         } else {
             log.warn("'{}' is NOT active.", nodeId);
             future.complete();
@@ -161,8 +162,8 @@ public class ConsulClusterManager implements ClusterManager {
         log.trace("'{}' is trying to leave the cluster.", nodeId);
         if (active) {
             active = false;
-            CacheManager.close();
-            nodeManager.leave(resultFuture.completer());
+            cM.close();
+            nM.leave(resultFuture.completer());
         } else {
             log.warn("'{}' is NOT active.", nodeId);
             resultFuture.complete();

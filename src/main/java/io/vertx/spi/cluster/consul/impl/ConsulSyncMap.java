@@ -31,10 +31,10 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     private final KeyValueOptions kvOptions;
     private final Map<K, V> cache;
 
-    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, String sessionId, Map<K, V> haInfo) {
+    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, CacheManager cM, String sessionId, Map<K, V> haInfo) {
         super(name, cC);
         this.vertx = vx;
-        this.cache = CacheManager.getInstance().createAndGetCacheMap(name, Optional.of(haInfo));
+        this.cache = cM.createAndGetCacheMap(name, Optional.of(haInfo));
         // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
         this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
         printCache();
