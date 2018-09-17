@@ -2,7 +2,6 @@ package io.vertx.spi.cluster.consul.impl.cache;
 
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
 
@@ -29,7 +28,7 @@ import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
  *
  * @author Roman Levytskyi
  */
-class CacheMap<K, V> extends CacheListener implements Map<K, V> {
+class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
 
     private static final Logger log = LoggerFactory.getLogger(CacheMap.class);
 
@@ -128,18 +127,22 @@ class CacheMap<K, V> extends CacheListener implements Map<K, V> {
     }
 
     @Override
-    public void addOrUpdateEvent(KeyValue keyValue) {
-        try {
-            K key = (K) keyValue.getKey().replace(name + "/", "");
-            V value = decode(keyValue.getValue());
-            cache.put(key, value);
-        } catch (Exception e) {
-            log.error("Exception occurred while updating the consul cache: '{}'. Exception details: '{}'.", name, e.getMessage());
+    public void event(Event event) {
+        switch (event.getEventType()) {
+            case WRITE: {
+                try {
+                    K key = (K) event.getEntry().getKey().replace(name + "/", "");
+                    V value = decode(event.getEntry().getValue());
+                    cache.put(key, value);
+                } catch (Exception e) {
+                    log.error("Exception occurred while updating the consul cache: '{}'. Exception details: '{}'.", name, e.getMessage());
+                }
+                break;
+            }
+            case REMOVE: {
+                cache.remove(event.getEntry().getKey().replace(name + "/", ""));
+                break;
+            }
         }
-    }
-
-    @Override
-    public void removeEvent(KeyValue keyValue) {
-        cache.remove(keyValue.getKey().replace(name + "/", ""));
     }
 }

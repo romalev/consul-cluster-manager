@@ -9,28 +9,24 @@ import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 
-import java.util.concurrent.CountDownLatch;
-
 public class AliceService {
+
+    private static final Logger log = LoggerFactory.getLogger(AliceService.class);
+    private static Vertx vertx;
 
     // slf4j
     static {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
 
-    private static final Logger log = LoggerFactory.getLogger(AliceService.class);
-    private static Vertx vertx;
-
-
     public static void main(String[] args) {
         log.info("Booting up the ServiceA...");
-        CountDownLatch countDownLatch = new CountDownLatch(1);
 
+        //ZookeeperClusterManager zookeeperClusterManager = new ZookeeperClusterManager();
         ConsulClusterManager consulClusterManager = new ConsulClusterManager();
         VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setClusterManager(consulClusterManager);
@@ -70,16 +66,16 @@ public class AliceService {
             });
 
             router.get("/serviceA").handler(event -> {
-                vertx.sharedData().getAsyncMap("custom", result -> {
-                    if (result.succeeded()) {
-                        AsyncMap<Object, Object> asyncMap = result.result();
-                        asyncMap.put("Roman", "Lev", 20, completionHandler -> {
-
-                        });
-                    } else {
-                        log.error("Can't get custom map due to: {}", result.cause().toString());
-                    }
-                });
+//                vertx.sharedData().getAsyncMap("custom", result -> {
+//                    if (result.succeeded()) {
+//                        AsyncMap<Object, Object> asyncMap = result.result();
+//                        asyncMap.put("Roman", "Lev", 20, completionHandler -> {
+//
+//                        });
+//                    } else {
+//                        log.error("Can't get custom map due to: {}", result.cause().toString());
+//                    }
+//                });
 
                 vertx.eventBus().send("vertx-consul", "ping", replyHandler -> {
                     if (replyHandler.succeeded()) {
