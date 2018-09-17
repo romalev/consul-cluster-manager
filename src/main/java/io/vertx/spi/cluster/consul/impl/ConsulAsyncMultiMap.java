@@ -62,14 +62,14 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> encodeF(v))
                 .compose(value -> putConsulValue(nodeKeyPath(k.toString()), value, kvOpts))
-                .compose(putSucceeded -> putSucceeded ? cacheablePut(k, v) : Future.<Void>failedFuture(k.toString() + " wasn't added to consul kv store."))
+                .compose(putSucceeded -> putSucceeded ? cacheablePut(k, v) : Future.failedFuture(k.toString() + " wasn't added to consul kv store."))
                 .setHandler(completionHandler);
     }
 
     @Override
     public void get(K k, Handler<AsyncResult<ChoosableIterable<V>>> asyncResultHandler) {
         assertKeyIsNotNull(k)
-                .compose(aVoid -> cachableGet(k))
+                .compose(aVoid -> cacheableGet(k))
                 .setHandler(asyncResultHandler);
     }
 
@@ -105,7 +105,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                             V value = decode(keyValue.getValue());
                             if (p.test(value)) {
                                 Optional<ClusterNodeInfo> clusterNodeInfo = getClusterNodeInfo(value);
-                                clusterNodeInfo.ifPresent(nodeInfo -> futures.add(cachableRemove(keyValue)));
+                                clusterNodeInfo.ifPresent(nodeInfo -> futures.add(cacheableRemove(keyValue)));
                             }
                         } catch (Exception e) {
                             futures.add(Future.failedFuture(e));
@@ -117,7 +117,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     }
 
     /**
-     * Simple wrapper around cache put operation.
+     * Puts an entry to the cache.
      */
     private Future<Void> cacheablePut(K key, V value) {
         cache.put(key, value);
@@ -126,9 +126,9 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
 
     /**
-     * Simple wrapper around getting cached subs by address (@key) in case internal cache is empty.
+     * Gets entries (subscribers) either from cache (if it is NOT empty) or from consul kv store.
      */
-    private Future<ChoosableIterable<V>> cachableGet(K key) {
+    private Future<ChoosableIterable<V>> cacheableGet(K key) {
         if (cache.isEmpty()) {
             return eventBusChoosableSubs(key.toString())
                     .compose(vs -> {
@@ -137,11 +137,12 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                         return Future.succeededFuture(vs);
                     });
         }
-        return eventBusChoosableSubs(key.toString());
+        return Future.succeededFuture(cache.get(key));
     }
 
     /**
-     * Simple wrapper around removing values from kv store.
+     * Removes an entry (subscriber) from the cache only if it was already removed from consul kv store.
+     * Note: we don't wait for watch REMOVE event which will be emitted.
      */
     private Future<Boolean> cacheableRemove(K key, V value, String nodeId) {
         String nodeKeyPath = nodeKeyPath(key.toString(), nodeId);
@@ -154,9 +155,10 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     }
 
     /**
-     * Simple wrapper around removing values from kv store.
+     * Removes an entry (subscriber) from the cache only if it was already removed from consul kv store.
+     * Note: we don't wait for watch REMOVE event which will be emitted.
      */
-    private Future<Boolean> cachableRemove(KeyValue keyValue) {
+    private Future<Boolean> cacheableRemove(KeyValue keyValue) {
         return removeConsulValue(keyValue.getKey())
                 .compose(removeSucceeded -> {
                     // immediately update the internal cache.
