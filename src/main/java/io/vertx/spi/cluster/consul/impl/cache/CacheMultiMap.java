@@ -1,6 +1,7 @@
 package io.vertx.spi.cluster.consul.impl.cache;
 
 
+import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.KeyValue;
@@ -125,5 +126,10 @@ public class CacheMultiMap<K, V> implements KvStoreListener {
      */
     private String getEventBusAddress(String key) {
         return key.substring(key.indexOf("/") + 1, key.lastIndexOf("/"));
+    }
+
+    @Override
+    public String toString() {
+        return Json.encode(cache);
     }
 }
