@@ -3,6 +3,8 @@ version '1.0-SNAPSHOT'
 
 apply plugin: 'java'
 apply plugin: 'idea'
+apply plugin: 'checkstyle'
+apply plugin: 'findbugs'
 
 sourceCompatibility = 1.8
 
@@ -14,6 +16,15 @@ ext {
     junitVersion = "4.12"
     vertxVersion = "3.5.1"
     logbackVersion = "1.2.3"
+}
+
+checkstyle {
+    ignoreFailures = true
+}
+
+
+findbugs {
+    ignoreFailures = true
 }
 
 dependencies {

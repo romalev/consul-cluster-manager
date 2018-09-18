@@ -18,6 +18,11 @@ import java.util.Optional;
  */
 public interface KvStoreListener {
 
+    /**
+     * Receives an event emitted by consul watch.
+     *
+     * @param event - holds the event's data.
+     */
     void event(Event event);
 
     /**
@@ -80,6 +85,7 @@ public interface KvStoreListener {
     class Event {
         private final EventType eventType;
         private final KeyValue entry;
+
         Event(EventType eventType, KeyValue entry) {
             this.eventType = eventType;
             this.entry = entry;
