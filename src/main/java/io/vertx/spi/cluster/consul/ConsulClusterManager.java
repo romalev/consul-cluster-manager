@@ -28,8 +28,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Cluster manager that uses Consul. Given implementation is based vertx consul client.
  * Current restrictions :
  * <p>
- * - String must be used as a key for async maps. Current {@link ClusterSerializationUtils} must get enhanced to allow custom type be the key.
- * <p>
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
  * <p>

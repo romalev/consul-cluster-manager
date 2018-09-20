@@ -112,7 +112,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         }).compose(value -> {
             if (v.equals(value))
                 return removeConsulValue(keyPath(k))
-                        .compose(removeSucceeded -> removeSucceeded ? cachealeRemove(k) : Future.failedFuture("Key + " + k + " wasn't removed."));
+                        .compose(removeSucceeded -> removeSucceeded ? cacheableRemove(k) : Future.failedFuture("Key + " + k + " wasn't removed."));
             else return Future.succeededFuture(false);
         }).setHandler(resultHandler);
     }
@@ -244,7 +244,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
      * @param k - holds the key.
      * @return succeeded future with updating internal cache appropriately.
      */
-    private Future<Boolean> cachealeRemove(K k) {
+    private Future<Boolean> cacheableRemove(K k) {
         cache.remove(k);
         return Future.succeededFuture(true);
     }

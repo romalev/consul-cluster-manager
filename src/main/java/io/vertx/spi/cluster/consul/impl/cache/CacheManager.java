@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *
  * @author Roman Levytskyi
  */
-public class CacheManager {
+public final class CacheManager {
 
     private boolean active;
     private final Map<String, Map<?, ?>> caches = new ConcurrentHashMap<>();

@@ -81,7 +81,7 @@ public class ConsulSyncMapTest {
                 consulClient.getValue(MAP_NAME + "/" + key, event -> {
                     if (event.succeeded()) {
                         try {
-                            context.assertEquals(value, ClusterSerializationUtils.decode(event.result().getValue()));
+                            context.assertEquals(value, ConversationUtils.decode(event.result().getValue()).getValue());
                             context.assertEquals(value, consulSyncMap.get(key));
                         } catch (Exception e) {
                             context.fail(e);

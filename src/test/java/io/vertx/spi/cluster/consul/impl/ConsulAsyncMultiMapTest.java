@@ -43,7 +43,7 @@ public class ConsulAsyncMultiMapTest {
 
     private static final String nodeA = UUID.randomUUID().toString();
     private static final String nodeB = UUID.randomUUID().toString();
-    private static final boolean isEmbeddedConsulAgentEnabled = true;
+    private static final boolean isEmbeddedConsulAgentEnabled = false;
 
     private static ConsulAgent consulAgent;
     private static ConsulClient consulClient;
@@ -187,7 +187,8 @@ public class ConsulAsyncMultiMapTest {
                     // usersNodeASub was hopefully removed.
                     Set<ClusterNodeInfo> expectedNodeSet = Stream.of(usersNodeBSub).collect(Collectors.toSet());
                     usersSubs.result().forEach(clusterNodeInfo -> context.assertTrue(expectedNodeSet.contains(clusterNodeInfo)));
-                    consulAsyncMultiMapNodeB.get(posts, postsSubs -> {
+
+                    consulAsyncMultiMapNodeA.get(posts, postsSubs -> {
                         context.assertTrue(postsSubs.succeeded());
                         Set<ClusterNodeInfo> expectedNodeBSet = Stream.of(postsNodeBSub).collect(Collectors.toSet());
                         postsSubs.result().forEach(clusterNodeInfo -> context.assertTrue(expectedNodeBSet.contains(clusterNodeInfo)));

@@ -9,8 +9,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decodeF;
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.encodeF;
+import static io.vertx.core.Future.succeededFuture;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.decodeF;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.encodeF;
 
 /**
  * Abstract map functionality for clustering maps.
@@ -52,7 +53,7 @@ abstract class ConsulMap<K, V> {
     Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
         log.trace("'{}' - trying to put KV: '{}'->'{}' CKV.", name, k, v);
         return assertKeyAndValueAreNotNull(k, v)
-                .compose(aVoid -> encodeF(v))
+                .compose(aVoid -> encodeF(k, v))
                 .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
     }
 
@@ -88,7 +89,8 @@ abstract class ConsulMap<K, V> {
         log.trace("'{}' - getting an entry by K: '{}' from CKV.", name, k);
         return assertKeyIsNotNull(k)
                 .compose(aVoid -> getConsulKeyValue(keyPath(k)))
-                .compose(consulValue -> decodeF(consulValue.getValue()));
+                .compose(consulValue -> decodeF(consulValue.getValue()))
+                .compose(genericKeyValue -> genericKeyValue == null ? succeededFuture() : succeededFuture((V) genericKeyValue.getValue()));
     }
 
     /**
@@ -116,7 +118,7 @@ abstract class ConsulMap<K, V> {
         Future<Boolean> result = Future.future();
         consulClient.deleteValue(key, resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("'{}' - K: '{}' has been removed.", name, key);
+                log.trace("K: '{}' has been removed.", key);
                 result.complete(true);
             } else {
                 log.trace("'{}' - Can't delete K: '{}' due to: '{}'.", name, key, resultHandler.cause().toString());
@@ -229,7 +231,7 @@ abstract class ConsulMap<K, V> {
     Future<Void> assertValueIsNotNull(Object value) {
         boolean result = value == null;
         if (result) return io.vertx.core.Future.failedFuture("Value can not be null.");
-        else return Future.succeededFuture();
+        else return succeededFuture();
     }
 
     /**
@@ -245,11 +247,15 @@ abstract class ConsulMap<K, V> {
     Future<Void> assertKeyIsNotNull(Object key) {
         boolean result = key == null;
         if (result) return io.vertx.core.Future.failedFuture("Key can not be null.");
-        else return io.vertx.core.Future.succeededFuture();
+        else return succeededFuture();
     }
 
-    String keyPath(K k) {
+    String keyPath(Object k) {
         return name + "/" + k.toString();
+    }
+
+    String actualKey(String key) {
+        return key.replace(name + "/", "");
     }
 
     /**
@@ -258,4 +264,5 @@ abstract class ConsulMap<K, V> {
     List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
         return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
     }
+
 }

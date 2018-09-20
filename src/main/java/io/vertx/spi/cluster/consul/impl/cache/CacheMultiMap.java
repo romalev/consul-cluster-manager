@@ -4,15 +4,15 @@ package io.vertx.spi.cluster.consul.impl.cache;
 import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
 import io.vertx.spi.cluster.consul.impl.ChoosableSet;
+import io.vertx.spi.cluster.consul.impl.ConversationUtils;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.decode;
 
 /**
  * Implementation of local IN-MEMORY multimap cache which is essentially concurrent hash map under the hood.
@@ -20,7 +20,7 @@ import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
  *
  * @author Roman Levytskyi
  */
-public class CacheMultiMap<K, V> implements KvStoreListener {
+public final class CacheMultiMap<K, V> implements KvStoreListener {
 
     private static final Logger log = LoggerFactory.getLogger(CacheMultiMap.class);
     private final String name;
@@ -37,7 +37,7 @@ public class CacheMultiMap<K, V> implements KvStoreListener {
      * Start caching data.
      */
     private void start() {
-        log.trace("Cache for: '{}' has been started.", name);
+        log.trace("Multimap cache for: '{}' has been started.", name);
         watch.setHandler(kvWatchHandler()).start();
     }
 
@@ -52,7 +52,7 @@ public class CacheMultiMap<K, V> implements KvStoreListener {
      * Gets an entry  from internal cache.
      */
     public ChoosableSet<V> get(K k) {
-        log.trace("Getting all subs by: '{}' from internal cache.", k.toString());
+        log.trace("Getting all subs by: '{}' from internal multimap cache.", k.toString());
         return cache.get(k);
     }
 
@@ -60,36 +60,24 @@ public class CacheMultiMap<K, V> implements KvStoreListener {
      * Puts an entry to internal cache.
      */
     public synchronized void put(K key, V value) {
-        log.trace("Putting: '{}->'{}' to internal cache.", key, value);
+        log.trace("Putting: '{}->'{}' to internal multimap cache: '{}'.", key, value, this.toString());
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) choosableSet = new ChoosableSet<>(1);
         choosableSet.add(value);
         cache.put(key, choosableSet);
+        log.trace("Multimap cache after put of '{}->'{}' : '{}' ", key, value, this.toString());
     }
 
     /**
      * Removes an entry from internal cache.
      */
     public synchronized void remove(K key, V value) {
-        log.trace("Removing: '{}->'{}' from internal cache.", key, value);
+        log.trace("Removing: '{}->'{}' from multimap internal cache: '{}'.", key, value, this.toString());
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) return;
         choosableSet.remove(value);
         cache.put(key, choosableSet);
-    }
-
-    /**
-     * Removes an entry from internal cache.
-     */
-    public void remove(KeyValue keyValue) {
-        log.trace("Removing: '{}'->'{}' from internal cache.", keyValue.getKey(), keyValue.getValue());
-        try {
-            K key = (K) getEventBusAddress(keyValue.getKey());
-            V value = decode(keyValue.getValue());
-            remove(key, value);
-        } catch (Exception e) {
-            log.error("Exception occurred while updating the internal cache: '{}'. Exception details: '{}'.", name, e.getMessage());
-        }
+        log.trace("Multimap cache after remove of '{}->'{}' : '{}' ", key, value, this.toString());
     }
 
     public void putAll(K key, ChoosableSet<V> values) {
@@ -101,35 +89,28 @@ public class CacheMultiMap<K, V> implements KvStoreListener {
     }
 
     @Override
-    public void event(Event event) {
-        switch (event.getEventType()) {
-            case WRITE: {
-                log.trace("Adding: '{}'->'{}' to internal cache.", event.getEntry().getKey(), event.getEntry().getValue());
-                try {
-                    K key = (K) getEventBusAddress(event.getEntry().getKey());
-                    V value = decode(event.getEntry().getValue());
-                    put(key, value);
-                } catch (Exception e) {
-                    log.error("Exception occurred while updating the internal cache: '{}'. Exception details: '{}'.", name, e.getMessage());
-                }
-                break;
-            }
-            case REMOVE: {
-                remove(event.getEntry());
-                break;
-            }
+    public void entryUpdated(EntryEvent event) {
+        ConversationUtils.GenericEntry<K, V> entry;
+        try {
+            entry = decode(event.getEntry().getValue());
+        } catch (Exception e) {
+            log.error("Can't decode: '{}'->'{}' due to: '{}'", event.getEntry().getKey(), event.getEntry().getValue(), e.getCause());
+            return;
         }
-    }
-
-    /**
-     * Gets event bus address out of  multimap key - i.e. __vertx.subs/users.create.channel/{nodeId} -> users.create.channel.
-     */
-    private String getEventBusAddress(String key) {
-        return key.substring(key.indexOf("/") + 1, key.lastIndexOf("/"));
+        switch (event.getEventType()) {
+            case WRITE:
+                put(entry.getKey(), entry.getValue());
+                break;
+            case REMOVE:
+                remove(entry.getKey(), entry.getValue());
+                break;
+            default:
+                break;
+        }
     }
 
     @Override
     public String toString() {
-        return Json.encode(cache);
+        return Json.encodePrettily(cache);
     }
 }

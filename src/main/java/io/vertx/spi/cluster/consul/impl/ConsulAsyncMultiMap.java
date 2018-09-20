@@ -16,8 +16,7 @@ import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.encodeF;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.encodeF;
 
 /**
  * Distributed consul async multimap implementation. IMPORTANT: purpose of async multimap in vertx cluster management is to hold mapping between
@@ -60,7 +59,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     @Override
     public void add(K k, V v, Handler<AsyncResult<Void>> completionHandler) {
         assertKeyAndValueAreNotNull(k, v)
-                .compose(aVoid -> encodeF(v))
+                .compose(aVoid -> encodeF(k, v))
                 .compose(value -> putConsulValue(nodeKeyPath(k.toString()), value, kvOpts))
                 .compose(putSucceeded -> putSucceeded ? cacheablePut(k, v) : Future.failedFuture(k.toString() + " wasn't added to consul kv store."))
                 .setHandler(completionHandler);
@@ -102,10 +101,10 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                     List<Future> futures = new ArrayList<>();
                     keyValues.forEach(keyValue -> {
                         try {
-                            V value = decode(keyValue.getValue());
-                            if (p.test(value)) {
-                                Optional<ClusterNodeInfo> clusterNodeInfo = getClusterNodeInfo(value);
-                                clusterNodeInfo.ifPresent(nodeInfo -> futures.add(cacheableRemove(keyValue)));
+                            ConversationUtils.GenericEntry<K, V> entry = ConversationUtils.decode(keyValue.getValue());
+                            if (p.test(entry.getValue())) {
+                                Optional<ClusterNodeInfo> clusterNodeInfo = getClusterNodeInfo(entry.getValue());
+                                clusterNodeInfo.ifPresent(nodeInfo -> futures.add(cacheableRemove(entry.getKey(), entry.getValue(), nodeInfo.nodeId)));
                             }
                         } catch (Exception e) {
                             futures.add(Future.failedFuture(e));
@@ -155,19 +154,6 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     }
 
     /**
-     * Removes an entry (subscriber) from the cache only if it was already removed from consul kv store.
-     * Note: we don't wait for watch REMOVE event which will be emitted.
-     */
-    private Future<Boolean> cacheableRemove(KeyValue keyValue) {
-        return removeConsulValue(keyValue.getKey())
-                .compose(removeSucceeded -> {
-                    // immediately update the internal cache.
-                    cache.remove(keyValue);
-                    return Future.succeededFuture(true);
-                });
-    }
-
-    /**
      * Future choosable set of subscribers of eventBusAddress.
      */
     private Future<ChoosableIterable<V>> eventBusChoosableSubs(String eventBusAddress) {
@@ -192,7 +178,8 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                     Set<V> subs = new HashSet<>(encodedSubs.size()); //  O(1)
                     encodedSubs.forEach(s -> {
                         try {
-                            subs.add(decode(s));
+                            ConversationUtils.GenericEntry<K, V> entry = ConversationUtils.decode(s);
+                            subs.add(entry.getValue());
                         } catch (Exception e) {
                             log.error("Can't decode subscriber of: '{}' due to: '{}'", eventBusAddress.get(), e.getCause());
                         }

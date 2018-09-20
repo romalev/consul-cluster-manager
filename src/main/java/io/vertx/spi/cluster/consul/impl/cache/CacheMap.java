@@ -4,14 +4,13 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
+import io.vertx.spi.cluster.consul.impl.ConversationUtils;
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
-import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
 
 
 /**
@@ -28,7 +27,7 @@ import static io.vertx.spi.cluster.consul.impl.ClusterSerializationUtils.decode;
  *
  * @author Roman Levytskyi
  */
-class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
+final class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
 
     private static final Logger log = LoggerFactory.getLogger(CacheMap.class);
 
@@ -127,22 +126,23 @@ class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
     }
 
     @Override
-    public void event(Event event) {
+    public void entryUpdated(EntryEvent event) {
+        ConversationUtils.GenericEntry<K, V> entry;
+        try {
+            entry = ConversationUtils.decode(event.getEntry().getValue());
+        } catch (Exception e) {
+            log.error("Can't decode: '{}'->'{}' due to: '{}'", event.getEntry().getKey(), event.getEntry().getValue(), e.getCause());
+            return;
+        }
         switch (event.getEventType()) {
-            case WRITE: {
-                try {
-                    K key = (K) event.getEntry().getKey().replace(name + "/", "");
-                    V value = decode(event.getEntry().getValue());
-                    cache.put(key, value);
-                } catch (Exception e) {
-                    log.error("Exception occurred while updating the consul cache: '{}'. Exception details: '{}'.", name, e.getMessage());
-                }
+            case WRITE:
+                cache.put(entry.getKey(), entry.getValue());
                 break;
-            }
-            case REMOVE: {
-                cache.remove(event.getEntry().getKey().replace(name + "/", ""));
+            case REMOVE:
+                cache.remove(entry.getKey());
                 break;
-            }
+            default:
+                break;
         }
     }
 }

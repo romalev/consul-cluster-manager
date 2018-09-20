@@ -21,6 +21,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.decode;
+
 /**
  * Main manager is accountable for:
  * <p>
@@ -123,9 +125,9 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
     }
 
     @Override
-    public void event(Event event) {
+    public void entryUpdated(EntryEvent event) {
         vertx.executeBlocking(workingThread -> {
-            String receivedNodeId = event.getEntry().getKey().replace(name + "/", "");
+            String receivedNodeId = actualKey(event.getEntry().getKey());
             switch (event.getEventType()) {
                 case WRITE: {
                     log.trace("Node: '{}' has joined the cluster.", receivedNodeId);
@@ -160,8 +162,8 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
 
 
     /**
-     * @param <K> represents key type (in haIfoMap it is a simple string)
-     * @param <V> represents value type (in haIfoMap it is a simple string)
+     * @param <K> represents key type.
+     * @param <V> represents value type.
      * @return pre-initialized cache that is later used to build consul sync map.
      */
     public <K, V> Map<K, V> getHaInfo() {
@@ -171,8 +173,8 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
     /**
      * Initializes haInfo map.
      *
-     * @param <K> represents key type (in haIfoMap it is a simple string)
-     * @param <V> represents value type (in haIfoMap it is a simple string)
+     * @param <K> represents key type.
+     * @param <V> represents value type.
      * @return completed future if haInfo is initialized successfully, failed future - otherwise.
      */
     private <K, V> Future<Void> initHaInfo() {
@@ -183,12 +185,11 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
                 List<KeyValue> keyValueList = getKeyValueListOrEmptyList(futureMap.result());
                 keyValueList.forEach(keyValue -> {
                     try {
-                        K key = (K) keyValue.getKey().replace(HA_INFO_MAP + "/", "");
-                        V value = ClusterSerializationUtils.decode(keyValue.getValue());
-                        haInfoMap.put(key, value);
+                        ConversationUtils.GenericEntry<K, V> entry = decode(keyValue.getValue());
+                        haInfoMap.put(entry.getKey(), entry.getValue());
                     } catch (Exception e) {
-                        log.trace("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
-                        // don't throw any exceptions here - just ignore kv pair that can't be decoded.
+                        log.error("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
+                        futureHaInfoCache.fail(e);
                     }
                 });
                 log.trace("'{}' internal cache is pre-built now: '{}'", HA_INFO_MAP, Json.encodePrettily(haInfoMap));
@@ -309,7 +310,7 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
         return consulKeys()
                 .compose(list -> {
                     if (list == null) return Future.succeededFuture();
-                    nodes = list.stream().map(s -> s.replace(name + "/", "")).collect(Collectors.toSet());
+                    nodes = list.stream().map(this::actualKey).collect(Collectors.toSet());
                     log.trace("Available nodes within the cluster: '{}'", nodes);
                     return Future.succeededFuture();
                 });

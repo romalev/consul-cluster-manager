@@ -20,6 +20,8 @@ import io.vertx.ext.consul.KeyValueOptions;
  * - and this is what we need.
  * <p>
  * Good to read: http://alesnosek.com/blog/2017/07/25/check-and-set-operation-and-transactions-in-consul/
+ * <p>
+ * Note: given implementation doesn't require to serialize/deserialize counter related data, instead it just manipulates plain strings.
  *
  * @author Roman Levytskyi
  */

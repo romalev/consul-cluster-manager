@@ -45,7 +45,7 @@ public class ConsulAsyncMapTest {
     private static AsyncMap<String, String> consulAsyncMap;
     private static CacheManager cacheManager;
 
-    private static final boolean isEmbeddedConsulAgentEnabled = true;
+    private static final boolean isEmbeddedConsulAgentEnabled = false;
 
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();
@@ -105,7 +105,7 @@ public class ConsulAsyncMapTest {
         String value = "valueADirect";
         String encodedValue = "";
         try {
-            encodedValue = ClusterSerializationUtils.encode(value);
+            encodedValue = ConversationUtils.encode(key, value);
         } catch (IOException e) {
             context.fail(e);
         }

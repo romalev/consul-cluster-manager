@@ -22,6 +22,8 @@ import java.util.Optional;
  * Some additional details:
  * https://github.com/hashicorp/consul/issues/432
  * https://blog.emilienkenler.com/2017/05/20/distributed-locking-with-consul/
+ * <p>
+ * Note: given implementation doesn't require to serialize/deserialize lock related data, instead it just manipulates plain strings.
  *
  * @author Roman Levytskyi
  */

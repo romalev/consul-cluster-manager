@@ -4,7 +4,7 @@ import io.vertx.core.Handler;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.WatchResult;
-import io.vertx.spi.cluster.consul.impl.cache.KvStoreListener.Event.EventType;
+import io.vertx.spi.cluster.consul.impl.cache.KvStoreListener.EntryEvent.EventType;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Dedicated cache listener based on watch - notifies exactly about  what has changed in consul kv store.
+ * Dedicated cache listener based on watch - notifies exactly about what has changed in consul kv store.
  *
  * @author Roman Levytskyi
  */
@@ -23,7 +23,7 @@ public interface KvStoreListener {
      *
      * @param event - holds the event's data.
      */
-    void event(Event event);
+    void entryUpdated(EntryEvent event);
 
     /**
      * Implementation of watch handler to determine (listen for) updates that are happening within consul KV store.
@@ -46,27 +46,27 @@ public interface KvStoreListener {
                         if (prev.get().getModifyIndex() == next.get().getModifyIndex()) {
                             // no update since keys AND their modify indices are equal.
                         } else {
-                            event(new Event(EventType.WRITE, next.get()));
+                            entryUpdated(new EntryEvent(EventType.WRITE, next.get()));
                         }
                         prev = prevKvIterator.hasNext() ? Optional.of(prevKvIterator.next()) : Optional.empty();
                         next = nextKvIterator.hasNext() ? Optional.of(nextKvIterator.next()) : Optional.empty();
 
                     } else if (prev.get().getKey().compareToIgnoreCase(next.get().getKey()) > 0) {
-                        event(new Event(EventType.WRITE, next.get()));
+                        entryUpdated(new EntryEvent(EventType.WRITE, next.get()));
                         next = nextKvIterator.hasNext() ? Optional.of(nextKvIterator.next()) : Optional.empty();
                     } else {
                         // ie -> evaluation this condition prev.get().getKey().compareToIgnoreCase(next.get().getKey()) < 0.
-                        event(new Event(EventType.REMOVE, prev.get()));
+                        entryUpdated(new EntryEvent(EventType.REMOVE, prev.get()));
                         prev = prevKvIterator.hasNext() ? Optional.of(prevKvIterator.next()) : Optional.empty();
                     }
                     continue;
                 }
                 if (prev.isPresent()) {
-                    event(new Event(EventType.REMOVE, prev.get()));
+                    entryUpdated(new EntryEvent(EventType.REMOVE, prev.get()));
                     prev = prevKvIterator.hasNext() ? Optional.of(prevKvIterator.next()) : Optional.empty();
                     continue;
                 }
-                event(new Event(EventType.WRITE, next.get()));
+                entryUpdated(new EntryEvent(EventType.WRITE, next.get()));
                 next = nextKvIterator.hasNext() ? Optional.of(nextKvIterator.next()) : Optional.empty();
             }
         };
@@ -82,11 +82,11 @@ public interface KvStoreListener {
     /**
      * Represents an event being emitted from consul watch.
      */
-    class Event {
+    class EntryEvent {
         private final EventType eventType;
         private final KeyValue entry;
 
-        Event(EventType eventType, KeyValue entry) {
+        EntryEvent(EventType eventType, KeyValue entry) {
             this.eventType = eventType;
             this.entry = entry;
         }
