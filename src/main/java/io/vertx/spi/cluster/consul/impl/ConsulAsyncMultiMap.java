@@ -34,6 +34,8 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.encodeF;
  * __vertx.subs/users.push.sms.channel/{nodeId} -> {nodeId} - localhost:5505
  * __vertx.subs/users.push.sms.channel/{nodeId} -> {nodeId} - localhost:5506
  *
+ * Note : https://github.com/vert-x3/vertx-consul-client/issues/54
+ *
  * @author Roman Levytskyi
  */
 public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V> {
