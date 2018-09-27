@@ -15,13 +15,14 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 
 public class AliceService {
 
-    private static final Logger log = LoggerFactory.getLogger(AliceService.class);
-    private static Vertx vertx;
-
     // slf4j
     static {
         System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
     }
+
+    private static final Logger log = LoggerFactory.getLogger(AliceService.class);
+    private static Vertx vertx;
+
 
     public static void main(String[] args) {
         log.info("Booting up the ServiceA...");
@@ -29,6 +30,8 @@ public class AliceService {
         //ZookeeperClusterManager zookeeperClusterManager = new ZookeeperClusterManager();
         ConsulClusterManager consulClusterManager = new ConsulClusterManager();
         VertxOptions vertxOptions = new VertxOptions();
+        vertxOptions.setHAEnabled(true);
+        vertxOptions.setHAGroup("test-ha-group");
         vertxOptions.setClusterManager(consulClusterManager);
         Vertx.clusteredVertx(vertxOptions, res -> {
             if (res.succeeded()) {

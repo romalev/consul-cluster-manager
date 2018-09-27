@@ -28,12 +28,12 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.decode;
  * <p>
  * - Node registration within the cluster. Every new consul service and new entry within __vertx.nodes represent actual vertx node.
  * Don't confuse vertx node with consul (native) node - these are completely different things.
- * Note: every vetx nodes that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".
+ * Note: every vetx node that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".
  * <p>
  * - Node discovery. Nodes discovery for a new node happening while this new node is joining the cluster - it looks up all entry withing __vertx.nodes.
  * <p>
  * - HaInfo pre-initialization. We need to pre-build haInfo map at the "node is joining" stage to be able later on to properly
- * initialize the consul sync map. We can't block the event loop thread that gets the consul sync map. (Consul sync map holds haInfo.)
+ * initialize consul sync map. We can't block the event loop thread when it gets the consul sync map. (Consul sync map holds haInfo.)
  * <p>
  * - Creating dummy TCP server to receive and acknowledge heart beats messages from consul.
  * <p>
@@ -102,6 +102,7 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
                 .compose(aVoid -> {
                     haInfoMap.clear();
                     netServer.close();
+                    nodes.clear();
                     return Future.<Void>succeededFuture();
                 })
                 .compose(aVoid -> destroySession())

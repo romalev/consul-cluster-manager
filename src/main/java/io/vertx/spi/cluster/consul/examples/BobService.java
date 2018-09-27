@@ -43,6 +43,8 @@ public class BobService {
 
         // 4. vertx
         VertxOptions vertxOptions = new VertxOptions();
+        vertxOptions.setHAEnabled(true);
+        vertxOptions.setHAGroup("test-ha-group");
         vertxOptions.setClusterManager(consulClusterManager);
 
         Vertx.clusteredVertx(vertxOptions, res -> {

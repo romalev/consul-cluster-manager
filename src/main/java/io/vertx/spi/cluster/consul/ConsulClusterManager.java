@@ -25,7 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Cluster manager that uses Consul. Given implementation is based vertx consul client.
+ * Cluster manager that uses Consul. Given implementation is based on vertx consul client.
  * Current restrictions :
  * <p>
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
@@ -76,7 +76,6 @@ public class ConsulClusterManager implements ClusterManager {
      */
     @Override
     public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
-        log.trace("Getting async multimap by name: '{}'", name);
         Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
         AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cM, nM.getSessionId(), nodeId));
         futureMultiMap.complete(asyncMultiMap);
@@ -85,7 +84,6 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
-        log.trace("Getting async map by name: '{}'", name);
         Future<AsyncMap<K, V>> futureMap = Future.future();
         AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, cM));
         futureMap.complete(asyncMap);

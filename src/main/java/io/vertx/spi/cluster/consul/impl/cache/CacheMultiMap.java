@@ -37,6 +37,7 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
      * Start caching data.
      */
     private void start() {
+        // TODO: start the watcher only if there's any entry under __vertx.subs.
         log.trace("Multimap cache for: '{}' has been started.", name);
         watch.setHandler(kvWatchHandler()).start();
     }
@@ -76,7 +77,8 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) return;
         choosableSet.remove(value);
-        cache.put(key, choosableSet);
+        if (choosableSet.isEmpty()) cache.remove(key);
+        else cache.put(key, choosableSet);
         log.trace("Multimap cache after remove of '{}->'{}' : '{}' ", key, value, this.toString());
     }
 
