@@ -55,3 +55,4 @@ Vertx.clusteredVertx(vertxOptions, res -> {
 
 ***Restrictions***
 - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to any client that attempts to store more than that limit in a value.  
+- TTL value (on entries) must be between 10s and 86400s currently. [Invalidation-time is twice the TTL time](https://github.com/hashicorp/consul/issues/1172) - this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl. 

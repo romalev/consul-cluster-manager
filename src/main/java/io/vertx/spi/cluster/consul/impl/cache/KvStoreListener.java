@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Dedicated cache listener based on watch - notifies exactly about what has changed in consul kv store.
+ * Consul KV store listener encapsulates mechanism of receiving {@link io.vertx.ext.consul.KeyValueList} and transforming it to internal {@link EntryEvent}.
  *
  * @author Roman Levytskyi
  */
@@ -26,7 +26,7 @@ public interface KvStoreListener {
     void entryUpdated(EntryEvent event);
 
     /**
-     * Implementation of watch handler to determine (listen for) updates that are happening within consul KV store.
+     * Transforms incoming {@link io.vertx.ext.consul.KeyValueList} into internal {@link EntryEvent}
      * <p>
      * Note: given approach provides O(n) execution time since it is must to loop through prev and next lists of entries.
      */
@@ -80,9 +80,9 @@ public interface KvStoreListener {
     }
 
     /**
-     * Represents an event being emitted from consul watch.
+     * Represents an event that gets built out of consul watch's {@link io.vertx.ext.consul.KeyValueList}.
      */
-    class EntryEvent {
+    final class EntryEvent {
         private final EventType eventType;
         private final KeyValue entry;
 

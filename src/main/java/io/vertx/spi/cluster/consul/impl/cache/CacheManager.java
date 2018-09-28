@@ -13,7 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Cache manager implementation - special mechanism to manage (create and evict) caches being used by consul cluster manager (consul distributed maps).
+ * Dedicated caching mechanism that encapsulates managing caches and its watches.
+ * Keeping nodes caches up-to-date is done by using consul watches.
+ * Now:
+ * - when node joins the cluster -> watches (that are dedicated to caching) have to be started to listen for updates and cache them appropriately.
+ * - when node leaves the cluster -> same watches have to stopped.
  *
  * @author Roman Levytskyi
  */
@@ -21,7 +25,7 @@ public final class CacheManager {
 
     private boolean active;
     private final Map<String, Map<?, ?>> caches = new ConcurrentHashMap<>();
-    // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches must be stopped.
+    // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches are stopped.
     private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
     private final Vertx vertx;
     private final ConsulClientOptions cClOptns;
@@ -43,17 +47,6 @@ public final class CacheManager {
         caches.values().forEach(Map::clear);
         if (cacheMultiMap != null) cacheMultiMap.clear();
         active = false;
-    }
-
-    /**
-     * Checks whether given cache manager is active.
-     *
-     * @throws VertxException if cache manager is not active.
-     */
-    private void checkIfActive() {
-        if (!active) {
-            throw new VertxException("Cache manager is not active.");
-        }
     }
 
     /**
@@ -88,4 +81,16 @@ public final class CacheManager {
         watches.add(kvWatch);
         return kvWatch;
     }
+
+    /**
+     * Checks whether given cache manager is active.
+     *
+     * @throws VertxException if cache manager is not active.
+     */
+    private void checkIfActive() {
+        if (!active) {
+            throw new VertxException("Cache manager is not active.");
+        }
+    }
+
 }
