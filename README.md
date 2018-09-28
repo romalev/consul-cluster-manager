@@ -1,5 +1,8 @@
 # Consul cluster manager for Vert.x ecosystem #
 
+[![Build Status](https://travis-ci.com/romalev/vertx-consul-cluster-manager.svg?branch=master)](https://travis-ci.com/romalev/vertx-consul-cluster-manager)
+
+
 **Introduction**
 -
 Consul - based cluster manager that is plugable into Vert.x ecosystem. **[Consul](https://www.consul.io/)** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure. 
