@@ -2,7 +2,11 @@
 
 **Introduction**
 -
-This is so far the proof of concept of Consul - based cluster manager (which is still under active development) that is to be pluggable into Vert.x ecosystem. **Consul** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure: https://www.consul.io/ 
+Consul - based cluster manager that is plugable into Vert.x ecosystem. **[Consul](https://www.consul.io/)** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure. 
+
+***Project status***
+
+Project is still being under POC. Lost of application logging is still present.
 
 ***Motivation***
 
@@ -49,4 +53,5 @@ Vertx.clusteredVertx(vertxOptions, res -> {
 }
 ```
 
-*Stay tuned!* 
+***Restrictions***
+- The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to any client that attempts to store more than that limit in a value.  
