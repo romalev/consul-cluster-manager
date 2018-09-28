@@ -45,7 +45,7 @@ public class ConsulAsyncMapTest {
     private static AsyncMap<String, String> consulAsyncMap;
     private static CacheManager cacheManager;
 
-    private static final boolean isEmbeddedConsulAgentEnabled = false;
+    private static final boolean isEmbeddedConsulAgentEnabled = true;
 
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();

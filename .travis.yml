@@ -1,0 +1,23 @@
+language: java
+jdk:
+- oraclejdk8
+
+before_install:
+ - chmod +x gradlew
+
+install:
+  # Check install section: http://docs.travis-ci.com/user/build-configuration/#install
+  # If you'd like to skip the install stage entirely, set it to true and nothing will be run.
+  # prevent travis running gradle assemble; let the build script do it anyway
+  - true
+
+script:
+  # By default Travis-ci executes './gradlew build connectedCheck' if no 'script:' section found.
+  - ./gradlew build -x test
+
+# cache between builds
+cache:
+  directories:
+  - $HOME/.m2
+  - $HOME/.gradle
+

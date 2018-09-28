@@ -43,7 +43,7 @@ public class ConsulAsyncMultiMapTest {
 
     private static final String nodeA = UUID.randomUUID().toString();
     private static final String nodeB = UUID.randomUUID().toString();
-    private static final boolean isEmbeddedConsulAgentEnabled = false;
+    private static final boolean isEmbeddedConsulAgentEnabled = true;
 
     private static ConsulAgent consulAgent;
     private static ConsulClient consulClient;
