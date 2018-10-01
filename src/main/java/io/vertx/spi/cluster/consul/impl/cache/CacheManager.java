@@ -13,11 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Dedicated caching mechanism that encapsulates managing caches and its watches.
+ * Dedicated mechanism that encapsulates managing caches and its watches.
  * Keeping nodes caches up-to-date is done by using consul watches.
  * Now:
- * - when node joins the cluster -> watches (that are dedicated to caching) have to be started to listen for updates and cache them appropriately.
- * - when node leaves the cluster -> same watches have to stopped.
+ * - when node joins the cluster -> appropriate watches have to be started to listen for updates and cache them appropriately.
+ * - when node leaves the cluster -> appropriate watches have to stopped.
  *
  * @author Roman Levytskyi
  */

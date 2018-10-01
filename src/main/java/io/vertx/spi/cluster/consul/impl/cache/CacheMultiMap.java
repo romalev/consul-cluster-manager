@@ -37,8 +37,7 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
      * Start caching data.
      */
     private void start() {
-        // TODO: start the watcher only if there's any entry under __vertx.subs.
-        log.trace("Multimap cache for: '{}' has been started.", name);
+        log.trace("Cache for: " + name + " has been started.");
         watch.setHandler(kvWatchHandler()).start();
     }
 
@@ -53,7 +52,6 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
      * Gets an entry  from internal cache.
      */
     public ChoosableSet<V> get(K k) {
-        log.trace("Getting all subs by: '{}' from internal multimap cache.", k.toString());
         return cache.get(k);
     }
 
@@ -61,25 +59,23 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
      * Puts an entry to internal cache.
      */
     public synchronized void put(K key, V value) {
-        log.trace("Putting: '{}->'{}' to internal multimap cache: '{}'.", key, value, this.toString());
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) choosableSet = new ChoosableSet<>(1);
         choosableSet.add(value);
         cache.put(key, choosableSet);
-        log.trace("Multimap cache after put of '{}->'{}' : '{}' ", key, value, this.toString());
+        log.trace("Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
     }
 
     /**
      * Removes an entry from internal cache.
      */
     public synchronized void remove(K key, V value) {
-        log.trace("Removing: '{}->'{}' from multimap internal cache: '{}'.", key, value, this.toString());
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) return;
         choosableSet.remove(value);
         if (choosableSet.isEmpty()) cache.remove(key);
         else cache.put(key, choosableSet);
-        log.trace("Multimap cache after remove of '{}->'{}' : '{}' ", key, value, this.toString());
+        log.trace("Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
     }
 
     public void putAll(K key, ChoosableSet<V> values) {
@@ -96,7 +92,7 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
         try {
             entry = decode(event.getEntry().getValue());
         } catch (Exception e) {
-            log.error("Can't decode: '{}'->'{}' due to: '{}'", event.getEntry().getKey(), event.getEntry().getValue(), e.getCause());
+            log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
             return;
         }
         switch (event.getEventType()) {

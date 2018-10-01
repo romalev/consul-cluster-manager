@@ -131,20 +131,20 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
             String receivedNodeId = actualKey(event.getEntry().getKey());
             switch (event.getEventType()) {
                 case WRITE: {
-                    log.trace("Node: '{}' has joined the cluster.", receivedNodeId);
+                    log.trace("New node:" + receivedNodeId + " has joined the cluster.");
                     nodes.add(receivedNodeId);
                     if (nodeListener != null) {
-                        log.trace("Adding new node: '{}' to nodeListener.", receivedNodeId);
                         nodeListener.nodeAdded(receivedNodeId);
+                        log.trace("New node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId);
                     }
                     break;
                 }
                 case REMOVE: {
                     nodes.remove(receivedNodeId);
-                    log.trace("Node: '{}' has left the cluster.", receivedNodeId);
+                    log.trace("Node: " + receivedNodeId + " has left the cluster.");
                     if (nodeListener != null) {
-                        log.trace("Removing an existing node: '{}' from nodeListener.", receivedNodeId);
                         nodeListener.nodeLeft(receivedNodeId);
+                        log.trace("Node: " + receivedNodeId + " has left nodeListener.");
                     }
                     break;
                 }
@@ -179,7 +179,6 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
      * @return completed future if haInfo is initialized successfully, failed future - otherwise.
      */
     private <K, V> Future<Void> initHaInfo() {
-        log.trace("Initializing: '{}' internal cache ... ", HA_INFO_MAP);
         Future<Void> futureHaInfoCache = Future.future();
         consulClient.getValues(HA_INFO_MAP, futureMap -> {
             if (futureMap.succeeded()) {
@@ -189,14 +188,14 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
                         ConversationUtils.GenericEntry<K, V> entry = decode(keyValue.getValue());
                         haInfoMap.put(entry.getKey(), entry.getValue());
                     } catch (Exception e) {
-                        log.error("Can't decode value: {} while pre-init haInfo cache.", e.getCause().toString());
+                        log.error("Failed to decode an entry of haInfo.", e);
                         futureHaInfoCache.fail(e);
                     }
                 });
-                log.trace("'{}' internal cache is pre-built now: '{}'", HA_INFO_MAP, Json.encodePrettily(haInfoMap));
+                log.trace(HA_INFO_MAP + " has been pre-built: " + Json.encodePrettily(haInfoMap));
                 futureHaInfoCache.complete();
             } else {
-                log.error("Can't initialize the : '{}' due to: '{}'", HA_INFO_MAP, futureMap.cause().toString());
+                log.error("Failed to pre-build " + HA_INFO_MAP, futureMap.cause());
                 futureHaInfoCache.fail(futureMap.cause());
             }
         });
@@ -218,19 +217,22 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
         consulClient.registerService(serviceOptions, asyncResult -> {
             if (asyncResult.failed()) {
                 netServer.close();
-                log.error("Can't register node: '{}' due to: '{}'", nodeId, asyncResult.cause());
+                log.error("Failed to register node's service: " + nodeId, asyncResult.cause());
                 future.fail(asyncResult.cause());
             } else future.complete();
         });
         return future;
     }
 
+    /**
+     * Registers node within __vertx.nodes map.
+     */
     private Future<Void> registerNode() {
         Future<Void> future = Future.future();
         putValue(nodeId, tcpAddress.encode(), new KeyValueOptions().setAcquireSession(sessionId)).setHandler(asyncResult -> {
             if (asyncResult.failed()) {
                 netServer.close();
-                log.error("Can't add node: '{}' to: '{}' due to: '{}'", nodeId, name, asyncResult.cause());
+                log.error("Failed to put node: " + nodeId + " to: " + name, asyncResult.cause());
                 future.fail(asyncResult.cause());
             } else future.complete();
         });
@@ -245,13 +247,10 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
     private Future<Void> deregisterNode() {
         Future<Void> future = Future.future();
         consulClient.deregisterService(nodeId, event -> {
-            if (event.succeeded()) {
-                log.trace("'{}' has been unregistered.");
-                future.complete();
-            } else {
-                log.error("Couldn't unregister node: '{}' due to: '{}'", nodeId, event.cause().toString());
+            if (event.failed()) {
+                log.error("Failed to unregister node: " + nodeId, event.cause());
                 future.fail(event.cause());
-            }
+            } else future.complete();
         });
         return future;
     }
@@ -272,15 +271,12 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
                 .setStatus(CheckStatus.PASSING);
 
         consulClient.registerCheck(checkOptions, result -> {
-            if (result.succeeded()) {
-                log.trace("Check has been registered : '{}'", checkOptions.getId());
-                future.complete();
-            } else {
-                log.trace("Can't register check: '{}' due to: '{}'", checkOptions.getId(), result.cause().toString());
+            if (result.failed()) {
+                log.error("Failed to register check: " + checkOptions.getId() + " for node: " + nodeId, result.cause());
                 // try to de-register the node from consul cluster
                 deregisterNode();
                 future.fail(result.cause());
-            }
+            } else future.complete();
         });
         return future;
     }
@@ -293,7 +289,7 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
         consulClient.deregisterCheck(checkId, resultHandler -> {
             if (resultHandler.succeeded()) future.complete();
             else {
-                log.error("Can't deregister check: '{}' for node: '{}' due to: '{}'", checkId, nodeId, resultHandler.cause());
+                log.error("Failed to deregister check: " + checkId + " for node: " + nodeId, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
         });
@@ -307,12 +303,11 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
      * failed future - otherwise.
      */
     private Future<Void> discoverNodes() {
-        log.trace("Trying to discover nodes that are available within the consul cluster.");
         return consulKeys()
                 .compose(list -> {
                     if (list == null) return Future.succeededFuture();
                     nodes = list.stream().map(this::actualKey).collect(Collectors.toSet());
-                    log.trace("Available nodes within the cluster: '{}'", nodes);
+                    log.trace("Available nodes within the cluster: " + nodes);
                     return Future.succeededFuture();
                 });
     }
@@ -332,11 +327,11 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
 
         consulClient.createSessionWithOptions(sessionOptions, session -> {
             if (session.succeeded()) {
-                log.trace("Session : '{}' has been registered.", session.result());
+                log.trace("Session: " + session.result() + " has been registered for node: " + nodeId);
                 sessionId = session.result();
                 future.complete();
             } else {
-                log.error("Couldn't register the session due to: {}", session.cause().toString());
+                log.error("Failed to register the session for node: " + nodeId, session.cause());
                 future.fail(session.cause());
             }
         });
@@ -350,9 +345,9 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
         Future<Void> future = Future.future();
         consulClient.destroySession(sessionId, resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("Session: '{}' has been successfully destroyed for node: '{}'.", sessionId, nodeId);
+                log.trace("Session: " + sessionId + " has been successfully destroyed for node: " + nodeId);
             } else {
-                log.error("Can't destroy session: '{}' for node: '{}' due to: '{}'", sessionId, resultHandler.cause(), nodeId);
+                log.error("Failed to destroy session: " + sessionId + " for node: " + nodeId, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
         });
@@ -384,6 +379,6 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements KvSt
 
     // TODO: remove it.
     private void printLocalNodeMap() {
-        vertx.setPeriodic(15000, handler -> log.trace("Nodes are: '{}'", Json.encodePrettily(nodes)));
+        vertx.setPeriodic(15000, handler -> log.trace("Nodes are: " + Json.encodePrettily(nodes)));
     }
 }

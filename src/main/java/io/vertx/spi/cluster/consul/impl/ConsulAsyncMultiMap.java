@@ -33,7 +33,7 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.encodeF;
  * __vertx.subs/users.create.channel/{nodeId} -> {nodeId} - localhost:5502
  * __vertx.subs/users.push.sms.channel/{nodeId} -> {nodeId} - localhost:5505
  * __vertx.subs/users.push.sms.channel/{nodeId} -> {nodeId} - localhost:5506
- *
+ * <p>
  * Note : https://github.com/vert-x3/vertx-consul-client/issues/54
  *
  * @author Roman Levytskyi
@@ -55,7 +55,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         // options to make entries of this map ephemeral.
         this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
         // TODO: remove it.
-        vertx.setPeriodic(15000, event -> log.trace("CacheMultiMap is : '{}'", cache));
+        vertx.setPeriodic(15000, event -> log.trace("CacheMultiMap is: " + cache));
     }
 
     @Override
@@ -178,12 +178,13 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
                     Future<Set<V>> eventBusSubs = Future.future();
                     Set<String> encodedSubs = keyValues.stream().map(KeyValue::getValue).collect(Collectors.toSet());
                     Set<V> subs = new HashSet<>(encodedSubs.size()); //  O(1)
-                    encodedSubs.forEach(s -> {
+                    encodedSubs.forEach(sub -> {
                         try {
-                            ConversationUtils.GenericEntry<K, V> entry = ConversationUtils.decode(s);
+                            ConversationUtils.GenericEntry<K, V> entry = ConversationUtils.decode(sub);
                             subs.add(entry.getValue());
                         } catch (Exception e) {
-                            log.error("Can't decode subscriber of: '{}' due to: '{}'", eventBusAddress.get(), e.getCause());
+                            log.error("Failed to decode subscriber of: " + eventBusAddress.get(), e);
+                            eventBusSubs.fail(e);
                         }
                     });
                     eventBusSubs.complete(subs);

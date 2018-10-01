@@ -4,7 +4,6 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
-import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
@@ -92,13 +91,11 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public <K, V> Map<K, V> getSyncMap(String name) {
-        log.trace("Getting sync map by name: '{}' with initial cache: '{}'", name, Json.encodePrettily(nM.getHaInfo()));
         return new ConsulSyncMap<>(name, vertx, cC, cM, nM.getSessionId(), nM.getHaInfo());
     }
 
     @Override
     public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
-        log.trace("Getting lock with timeout by name: '{}'", name);
         Future<Lock> futureLock = Future.future();
         Lock lock = locks.computeIfAbsent(name, key -> new ConsulLock(name, timeout, cC));
         futureLock.complete(lock);
@@ -107,7 +104,6 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
-        log.trace("Getting counter by name: '{}'", name);
         Future<Counter> counterFuture = Future.future();
         Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, cC));
         counterFuture.complete(counter);
@@ -116,7 +112,6 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public String getNodeID() {
-        log.trace("Getting node id: '{}'", nodeId);
         return nodeId;
     }
 
@@ -127,14 +122,13 @@ public class ConsulClusterManager implements ClusterManager {
 
     @Override
     public void nodeListener(NodeListener listener) {
-        log.trace("Initializing the node listener...");
         nM.initNodeListener(listener);
     }
 
     @Override
     public synchronized void join(Handler<AsyncResult<Void>> resultHandler) {
         Future<Void> future = Future.future();
-        log.trace("'{}' is trying to join the cluster.", nodeId);
+        log.trace(nodeId + " is trying to join the cluster.");
         if (!active) {
             active = true;
             try {
@@ -146,7 +140,7 @@ public class ConsulClusterManager implements ClusterManager {
             }
             nM.join(future.completer());
         } else {
-            log.warn("'{}' is NOT active.", nodeId);
+            log.warn(nodeId + " is NOT active.");
             future.complete();
         }
         future.setHandler(resultHandler);
@@ -155,13 +149,13 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public synchronized void leave(Handler<AsyncResult<Void>> resultHandler) {
         Future<Void> resultFuture = Future.future();
-        log.trace("'{}' is trying to leave the cluster.", nodeId);
+        log.trace(nodeId + " is trying to leave the cluster.");
         if (active) {
             active = false;
             cM.close();
             nM.leave(resultFuture.completer());
         } else {
-            log.warn("'{}' is NOT active.", nodeId);
+            log.warn(nodeId + "' is NOT active.");
             resultFuture.complete();
         }
         resultFuture.setHandler(resultHandler);

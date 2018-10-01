@@ -51,7 +51,7 @@ abstract class ConsulMap<K, V> {
      * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
      */
     Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
-        log.trace("'{}' - trying to put KV: '{}'->'{}' CKV.", name, k, v);
+        log.trace("Putting: " + k + " -> " + v + " to: " + name + "with kvOptions : " + keyValueOptions);
         return assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> encodeF(k, v))
                 .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
@@ -69,10 +69,10 @@ abstract class ConsulMap<K, V> {
         Future<Boolean> future = Future.future();
         consulClient.putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("'{}'- put KV: '{}'->'{}' is: '{}'", name, key, value, resultHandler.result());
+                log.trace(key + " -> " + value + " put is " + resultHandler.result());
                 future.complete(resultHandler.result());
             } else {
-                log.error("'{}' - Can't put KV: '{}'->'{}' to CKV due to: '{}'", name, key, value, resultHandler.cause());
+                log.error("Failed to put " + key + " -> " + value, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
         });
@@ -86,7 +86,6 @@ abstract class ConsulMap<K, V> {
      * @return either empty future if key doesn't exist in KV store, future containing the value if key exists, failedFuture - otherwise.
      */
     Future<V> getValue(K k) {
-        log.trace("'{}' - getting an entry by K: '{}' from CKV.", name, k);
         return assertKeyIsNotNull(k)
                 .compose(aVoid -> getConsulKeyValue(keyPath(k)))
                 .compose(consulValue -> decodeF(consulValue.getValue()))
@@ -104,10 +103,10 @@ abstract class ConsulMap<K, V> {
         consulClient.getValue(consulKey, resultHandler -> {
             if (resultHandler.succeeded()) {
                 // note: resultHandler.result().getValue() is null if nothing was found.
-                log.trace("'{}' - got KV: '{}' - '{}'", name, consulKey, resultHandler.result().getValue());
+                log.trace("Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
                 future.complete(resultHandler.result());
             } else {
-                log.error("'{}' - can't get an entry by: '{}' due to: '{}'", name, consulKey, resultHandler.cause());
+                log.error("Failed to look up an entry by: " + consulKey, resultHandler.cause());
                 future.fail(resultHandler.cause());
             }
         });
@@ -118,10 +117,10 @@ abstract class ConsulMap<K, V> {
         Future<Boolean> result = Future.future();
         consulClient.deleteValue(key, resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("K: '{}' has been removed.", key);
+                log.trace("Entry with key: " + key + " has been removed.");
                 result.complete(true);
             } else {
-                log.trace("'{}' - Can't delete K: '{}' due to: '{}'.", name, key, resultHandler.cause().toString());
+                log.error("Failed to remove an entry by key: " + key, result.cause());
                 result.fail(resultHandler.cause());
             }
         });
@@ -134,13 +133,10 @@ abstract class ConsulMap<K, V> {
      */
     Future<Void> clearUp() {
         Future<Void> future = Future.future();
-        log.trace("{} - clearing this up.", name);
         consulClient.deleteValues(name, result -> {
-            if (result.succeeded()) {
-                log.trace("'{}' - has been cleared.");
-                future.complete();
-            } else {
-                log.trace("Can't clear: '{}' due to: '{}'", result.cause().toString());
+            if (result.succeeded()) future.complete();
+            else {
+                log.error("Failed to clear an entire: " + name);
                 future.fail(result.cause());
             }
         });
@@ -154,10 +150,10 @@ abstract class ConsulMap<K, V> {
         Future<List<String>> futureKeys = Future.future();
         consulClient.getKeys(name, resultHandler -> {
             if (resultHandler.succeeded()) {
-                log.trace("Keys of: '{}' are: '{}'", name, resultHandler.result());
+                log.trace("Found following keys of: " + name + " -> " + resultHandler.result());
                 futureKeys.complete(resultHandler.result());
             } else {
-                log.error("Error occurred while fetching all the keys from: '{}' due to: '{}'", name, resultHandler.cause().toString());
+                log.error("Failed to fetch keys of: " + name, resultHandler.cause());
                 futureKeys.fail(resultHandler.cause());
             }
         });
@@ -172,7 +168,7 @@ abstract class ConsulMap<K, V> {
         consulClient.getValues(name, resultHandler -> {
             if (resultHandler.succeeded()) keyValueListFuture.complete(resultHandler.result());
             else {
-                log.error("Can't get KV List of: '{}' due to: '{}'", name, resultHandler.cause().toString());
+                log.error("Failed to fetch entries of: " + name, resultHandler.cause());
                 keyValueListFuture.fail(resultHandler.cause());
             }
         });
@@ -215,10 +211,10 @@ abstract class ConsulMap<K, V> {
 
         consulClient.createSessionWithOptions(sessionOpts, idHandler -> {
             if (idHandler.succeeded()) {
-                log.trace("TTL session has been created with id: '{}'", idHandler.result());
+                log.trace("TTL session has been created with id: " + idHandler.result());
                 future.complete(idHandler.result());
             } else {
-                log.error("Failed to created ttl consul session due to: '{}'", idHandler.cause().toString());
+                log.error("Failed to create ttl consul session", idHandler.cause());
                 future.fail(idHandler.cause());
             }
         });

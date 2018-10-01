@@ -116,6 +116,6 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.
     // TODO : removed it when consul cluster manager is more or less stable.
     private void printCache() {
-        vertx.setPeriodic(15000, handler -> log.trace("Internal HaInfo (Sync) Map: '{}'", Json.encodePrettily(cache)));
+        vertx.setPeriodic(15000, handler -> log.trace("Internal HaInfo (Sync) Map: " + Json.encodePrettily(cache)));
     }
 }

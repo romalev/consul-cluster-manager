@@ -70,13 +70,11 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void putIfAbsent(K k, V v, Handler<AsyncResult<V>> completionHandler) {
-        log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV.", name, k, v);
         putIfAbsent(k, v, Optional.empty()).setHandler(completionHandler);
     }
 
     @Override
     public void putIfAbsent(K k, V v, long ttl, Handler<AsyncResult<V>> completionHandler) {
-        log.trace("'{}' - putting if absent KV: '{}' -> '{}' to CKV with ttl", name, k, v, ttl);
         assertKeyAndValueAreNotNull(k, v)
                 .compose(aVoid -> getTtlSessionId(ttl, k))
                 .compose(sessionId -> putIfAbsent(k, v, Optional.of(sessionId)))
@@ -85,7 +83,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     @Override
     public void remove(K k, Handler<AsyncResult<V>> asyncResultHandler) {
-        log.trace("'{}' - trying to remove an entry by K: '{}' from CKV.", name, k);
         assertKeyIsNotNull(k).compose(aVoid -> {
             Future<V> future = Future.future();
             get(k, future.completer());
@@ -104,7 +101,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     @Override
     public void removeIfPresent(K k, V v, Handler<AsyncResult<Boolean>> resultHandler) {
         // removes a value from the map, only if entry already exists with same value.
-        log.trace("'{}' - removing if present an entry by KV: '{}' -> '{}' from CKV.", name, k, v);
         assertKeyAndValueAreNotNull(k, v).compose(aVoid -> {
             Future<V> future = Future.future();
             get(k, future.completer());
@@ -120,7 +116,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     @Override
     public void replace(K k, V v, Handler<AsyncResult<V>> asyncResultHandler) {
         // replaces the entry only if it is currently mapped to some value.
-        log.trace("'{}' - replacing an entry with K: '{}' by new V: '{}'.", name, k, v);
         assertKeyAndValueAreNotNull(k, v).compose(aVoid -> {
             Future<V> future = Future.future();
             get(k, future.completer());
@@ -152,24 +147,16 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
                 .compose(value -> {
                     Future<Boolean> future = Future.future();
                     if (value != null) {
-                        if (value.equals(oldValue)) {
+                        if (value.equals(oldValue))
                             put(k, newValue, resultPutHandler -> {
-                                if (resultPutHandler.succeeded()) {
-                                    log.trace("Old V: '{}' has been replaced by new V: '{}' where K: '{}'", oldValue, newValue, k);
-                                    future.complete(true);
-                                } else {
-                                    log.trace("Can't replace old V: '{}' by new V: '{}' where K: '{}' due to: '{}'", oldValue, newValue, k, resultPutHandler.cause().toString());
-                                    future.fail(resultPutHandler.cause());
-                                }
+                                if (resultPutHandler.succeeded())
+                                    future.complete(true); // old V: '{}' has been replaced by new V: '{}' where K: '{}'", oldValue, newValue, k
+                                else
+                                    future.fail(resultPutHandler.cause()); // failed replace old V: '{}' by new V: '{}' where K: '{}' due to: '{}'", oldValue, newValue, k, resultPutHandler.cause()
                             });
-                        } else {
-                            log.trace("An entry with K: '{}' doesn't map to old V: '{}' so it won't get replaced.", k, oldValue);
-                            future.complete(false);
-                        }
-                    } else {
-                        log.trace("An entry with K: '{}' doesn't exist ");
-                        future.complete(false);
-                    }
+                        else
+                            future.complete(false); // "An entry with K: '{}' doesn't map to old V: '{}' so it won't get replaced.", k, oldValue);
+                    } else future.complete(false); // An entry with K: '{}' doesn't exist,
                     return future;
                 })
                 .setHandler(resultHandler);
@@ -262,6 +249,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     // helper method used to print out periodically the async consul map.
     // TODO: remove it.
     private void printOutAsyncMap() {
-        vertx.setPeriodic(15000, event -> entries(Future.future()));
+        vertx.setPeriodic(15000, event -> entries(ents -> log.trace("Entries of: " + name + ": " + ents.result())));
     }
 }

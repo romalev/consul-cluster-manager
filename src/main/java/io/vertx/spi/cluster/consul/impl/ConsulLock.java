@@ -51,10 +51,10 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
                 })
                 .setHandler(lockAcquiredRes -> {
                     if (lockAcquiredRes.result()) {
-                        log.trace("Lock on: '{}'  has been acquired.", lockName);
+                        log.trace("Lock on: " + lockName + " has been acquired.");
                     } else {
                         sessionId = Optional.empty();
-                        log.warn("Can't acquire lock on: '{}'. Someone else has already acquired it.");
+                        log.error("Failed acquire lock on: " + name + ". Someone else has already acquired it.");
                     }
                 });
     }
@@ -64,9 +64,8 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
     public void release() {
         sessionId.ifPresent(s ->
                 consulClient.destroySession(s, resultHandler -> {
-                    if (resultHandler.succeeded()) log.trace("Lock: '{}' has been released.", lockName);
-                    else
-                        log.error("Can't release lock: '{}' due to: '{}'.", lockName, resultHandler.cause().toString());
+                    if (resultHandler.succeeded()) log.trace("Lock: " + lockName + " has been released.");
+                    else log.error("Failed release lock: " + lockName, resultHandler.cause());
                 }));
     }
 }

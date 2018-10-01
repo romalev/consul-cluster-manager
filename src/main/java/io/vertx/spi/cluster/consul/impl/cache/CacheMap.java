@@ -52,7 +52,7 @@ final class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
      * Start caching data.
      */
     private void start() {
-        log.trace("Cache for: '{}' has been started.", name);
+        log.trace("Cache for: " + name + " has been started.");
         watch.setHandler(kvWatchHandler()).start();
     }
 
@@ -131,7 +131,7 @@ final class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
         try {
             entry = ConversationUtils.decode(event.getEntry().getValue());
         } catch (Exception e) {
-            log.error("Can't decode: '{}'->'{}' due to: '{}'", event.getEntry().getKey(), event.getEntry().getValue(), e.getCause());
+            log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
             return;
         }
         switch (event.getEventType()) {
