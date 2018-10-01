@@ -28,16 +28,7 @@ dependencies {
     testCompile group: 'com.pszymczyk.consul', name: 'embedded-consul', version: "1.1.1"
     testCompile group: 'io.vertx', name: 'vertx-unit', version: vertxVersion
 
-    compile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
     compile group: 'io.vertx', name: 'vertx-core', version: vertxVersion
     compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxVersion
-
-    // this is only for testing purposes.
-    // TODO : clean this up!!!
-    compile group: 'io.vertx', name: 'vertx-web', version: vertxVersion
-    // this are examples of consul cluster manager implementation.
-    compile group: 'io.vertx', name: 'vertx-hazelcast', version: vertxVersion
-    compile group: 'io.vertx', name: 'vertx-ignite', version: vertxVersion
-    compile group: 'io.vertx', name: 'vertx-zookeeper', version: vertxVersion
 
 }
