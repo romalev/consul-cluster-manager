@@ -9,7 +9,7 @@ Consul - based cluster manager that is plugable into Vert.x ecosystem. **[Consul
 
 ***Project status***
 
-Project is still being under POC. Lost of application logging is still present.
+Project is still being under POC. Lots of application logging is still present.
 
 ***Motivation***
 
