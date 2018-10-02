@@ -30,7 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
  * <p>
- * See README to get more details.
+ * - TTL value (on entries) must be between 10s and 86400s currently. [Invalidation-time is twice the TTL time](https://github.com/hashicorp/consul/issues/1172)
+ * this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl.
  *
  * @author Roman Levytskyi
  */
