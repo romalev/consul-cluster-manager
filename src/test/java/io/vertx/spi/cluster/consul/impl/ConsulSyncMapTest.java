@@ -8,7 +8,6 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.RunTestOnContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.spi.cluster.consul.ConsulAgent;
-import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -37,6 +36,8 @@ public class ConsulSyncMapTest {
     private static ConsulSyncMap<String, String> consulSyncMap;
     private static CacheManager cacheManager;
 
+    private static final boolean isEmbeddedConsulAgentEnabled = false;
+
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();
 
@@ -53,7 +54,7 @@ public class ConsulSyncMapTest {
         }, res ->
                 createConsulSessionId()
                         .compose(s -> {
-                            consulSyncMap = new ConsulSyncMap<>(MAP_NAME, rule.vertx(), consulClient, cacheManager, s, new ConcurrentHashMap<>());
+                            consulSyncMap = new ConsulSyncMap<>(MAP_NAME, "Roman", rule.vertx(), consulClient, cacheManager, s, new ConcurrentHashMap<>());
                             return Future.succeededFuture();
                         })
                         .setHandler(event -> {
@@ -81,7 +82,8 @@ public class ConsulSyncMapTest {
                 consulClient.getValue(MAP_NAME + "/" + key, event -> {
                     if (event.succeeded()) {
                         try {
-                            context.assertEquals(value, ConversationUtils.decode(event.result().getValue()).getValue());
+                            ConsulEntry o = ConversationUtils.asConsulEntry(event.result().getValue());
+                            context.assertEquals(value, o.getValue());
                             context.assertEquals(value, consulSyncMap.get(key));
                         } catch (Exception e) {
                             context.fail(e);

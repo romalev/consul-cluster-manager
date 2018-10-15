@@ -3,6 +3,7 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
 import io.vertx.core.shareddata.Counter;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
@@ -30,8 +31,8 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
     // key to access counter.
     private final String consulKey;
 
-    public ConsulCounter(String name, ConsulClient cC) {
-        super("__vertx.counters", cC);
+    public ConsulCounter(String name, String nodeId, Vertx vertx, ConsulClient cC) {
+        super("__vertx.counters", nodeId, vertx, cC);
         this.consulKey = keyPath(name);
     }
 

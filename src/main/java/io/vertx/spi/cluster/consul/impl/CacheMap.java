@@ -1,16 +1,17 @@
-package io.vertx.spi.cluster.consul.impl.cache;
+package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
-import io.vertx.spi.cluster.consul.impl.ConversationUtils;
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry;
 
 
 /**
@@ -27,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author Roman Levytskyi
  */
-final class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
+final class CacheMap<K, V> implements Map<K, V>, ConsulKvListener {
 
     private static final Logger log = LoggerFactory.getLogger(CacheMap.class);
 
@@ -127,9 +128,9 @@ final class CacheMap<K, V> implements Map<K, V>, KvStoreListener {
 
     @Override
     public void entryUpdated(EntryEvent event) {
-        ConversationUtils.GenericEntry<K, V> entry;
+        ConsulEntry<K, V> entry;
         try {
-            entry = ConversationUtils.decode(event.getEntry().getValue());
+            entry = asConsulEntry(event.getEntry().getValue());
         } catch (Exception e) {
             log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
             return;

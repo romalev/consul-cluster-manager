@@ -1,10 +1,10 @@
-package io.vertx.spi.cluster.consul.impl.cache;
+package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Handler;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.WatchResult;
-import io.vertx.spi.cluster.consul.impl.cache.KvStoreListener.EntryEvent.EventType;
+import io.vertx.spi.cluster.consul.impl.ConsulKvListener.EntryEvent.EventType;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -16,7 +16,7 @@ import java.util.Optional;
  *
  * @author Roman Levytskyi
  */
-public interface KvStoreListener {
+public interface ConsulKvListener {
 
     /**
      * Receives an event emitted by consul watch.
@@ -28,7 +28,7 @@ public interface KvStoreListener {
     /**
      * Transforms incoming {@link io.vertx.ext.consul.KeyValueList} into internal {@link EntryEvent}
      * <p>
-     * Note: given approach provides O(n) execution time since it is must to loop through prev and next lists of entries.
+     * Note: given approach provides O(n) execution time since it must loop through prev and next lists of entries.
      */
     default Handler<WatchResult<KeyValueList>> kvWatchHandler() {
         return event -> {

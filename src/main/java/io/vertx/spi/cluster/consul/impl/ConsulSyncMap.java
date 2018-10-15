@@ -6,7 +6,6 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
-import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.util.Collection;
 import java.util.Map;
@@ -27,13 +26,11 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
     private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
 
-    private final Vertx vertx;
     private final KeyValueOptions kvOptions;
     private final Map<K, V> cache;
 
-    public ConsulSyncMap(String name, Vertx vx, ConsulClient cC, CacheManager cM, String sessionId, Map<K, V> haInfo) {
-        super(name, cC);
-        this.vertx = vx;
+    public ConsulSyncMap(String name, String nodeId, Vertx vx, ConsulClient cC, CacheManager cM, String sessionId, Map<K, V> haInfo) {
+        super(name, nodeId, vx, cC);
         this.cache = cM.createAndGetCacheMap(name, Optional.of(haInfo));
         // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
         this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);

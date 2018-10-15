@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl.cache;
+package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxException;
@@ -23,12 +23,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public final class CacheManager {
 
-    private boolean active;
     private final Map<String, Map<?, ?>> caches = new ConcurrentHashMap<>();
     // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches are stopped.
     private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
     private final Vertx vertx;
     private final ConsulClientOptions cClOptns;
+    private boolean active;
     private CacheMultiMap<?, ?> cacheMultiMap;
 
     public CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
@@ -53,7 +53,7 @@ public final class CacheManager {
      * @param name - cache's name
      * @return fully initialized map cache.
      */
-    public <K, V> Map<K, V> createAndGetCacheMap(String name) {
+    <K, V> Map<K, V> createAndGetCacheMap(String name) {
         checkIfActive();
         return createAndGetCacheMap(name, Optional.empty());
     }
@@ -63,20 +63,20 @@ public final class CacheManager {
      * @param map  - map's entries to be put directly put into the cache.
      * @return fully initialized map cache.
      */
-    public <K, V> Map<K, V> createAndGetCacheMap(String name, Optional<Map<K, V>> map) {
+    <K, V> Map<K, V> createAndGetCacheMap(String name, Optional<Map<K, V>> map) {
         checkIfActive();
         return (Map<K, V>) caches.computeIfAbsent(name, key -> new CacheMap<>(name, createAndGetMapWatch(name), map));
     }
 
-    public <K, V> CacheMultiMap<K, V> createAndGetCacheMultiMap(String name) {
-        cacheMultiMap = new CacheMultiMap<>(name, createAndGetMapWatch(name));
+    <K, V> CacheMultiMap<K, V> createAndGetCacheMultiMap(String name, String nodeId) {
+        cacheMultiMap = new CacheMultiMap<>(name, nodeId, createAndGetMapWatch(name));
         return (CacheMultiMap<K, V>) cacheMultiMap;
     }
 
     /**
      * Creates consul (kv store specific) watch.
      */
-    public Watch<KeyValueList> createAndGetMapWatch(String mapName) {
+    Watch<KeyValueList> createAndGetMapWatch(String mapName) {
         Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
         watches.add(kvWatch);
         return kvWatch;

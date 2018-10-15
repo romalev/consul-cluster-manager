@@ -5,10 +5,7 @@
         </encoder>
     </appender>
 
-    <logger name="io.vertx.spi.cluster.consul" level="ALL" additivity="false">
-        <appender-ref ref="STDOUT"/>
-    </logger>
-    <logger name="io.vertx.core" level="ALL" additivity="false">
+    <logger name="io.vertx" level="ALL" additivity="false">
         <appender-ref ref="STDOUT"/>
     </logger>
 </configuration>

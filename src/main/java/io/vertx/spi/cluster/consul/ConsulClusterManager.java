@@ -15,7 +15,6 @@ import io.vertx.core.spi.cluster.NodeListener;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.impl.*;
-import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.util.List;
 import java.util.Map;
@@ -85,20 +84,20 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
         Future<AsyncMap<K, V>> futureMap = Future.future();
-        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, vertx, cC, cM));
+        AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, nodeId, vertx, cC, cM));
         futureMap.complete(asyncMap);
         futureMap.setHandler(asyncResultHandler);
     }
 
     @Override
     public <K, V> Map<K, V> getSyncMap(String name) {
-        return new ConsulSyncMap<>(name, vertx, cC, cM, nM.getSessionId(), nM.getHaInfo());
+        return new ConsulSyncMap<>(name, nodeId, vertx, cC, cM, nM.getSessionId(), nM.getHaInfo());
     }
 
     @Override
     public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
         Future<Lock> futureLock = Future.future();
-        Lock lock = locks.computeIfAbsent(name, key -> new ConsulLock(name, timeout, cC));
+        Lock lock = locks.computeIfAbsent(name, key -> new ConsulLock(name, nodeId, timeout, vertx, cC));
         futureLock.complete(lock);
         futureLock.setHandler(resultHandler);
     }
@@ -106,7 +105,7 @@ public class ConsulClusterManager implements ClusterManager {
     @Override
     public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
         Future<Counter> counterFuture = Future.future();
-        Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, cC));
+        Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, nodeId, vertx, cC));
         counterFuture.complete(counter);
         counterFuture.setHandler(resultHandler);
     }

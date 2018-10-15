@@ -1,7 +1,6 @@
 package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Future;
-import io.vertx.core.VertxException;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.shareddata.impl.ClusterSerializable;
 
@@ -17,34 +16,40 @@ import java.util.Base64;
  * 2) base64 encode this byte array - as a result we receive a string value.
  *
  * @author Roman Levytskyi.
+ * @See {@link ConsulEntry}
  */
-public class ConversationUtils {
+class ConversationUtils {
 
     private static final String SEPARATOR = "--SEPARATOR--";
 
+    static <K, V> String asString(K key, V value, String nodeId) throws IOException {
+        ConsulEntry<K, V> consulEntry = new ConsulEntry<>(key, value, nodeId);
+        return asString(consulEntry);
+    }
 
-    public static <K, V> Future<String> encodeF(K key, V value) {
+    static <K, V> ConsulEntry<K, V> asConsulEntry(String consulEntry) throws Exception {
+        String onlyBytes = consulEntry.substring(0, consulEntry.indexOf(SEPARATOR));
+        return asObject(onlyBytes);
+    }
+
+    static <K, V> Future<String> asString_f(K key, V value, String nodeId) {
+        final ConsulEntry<K, V> consulEntry = new ConsulEntry<>(key, value, nodeId);
         Future<String> result = Future.future();
         try {
-            result.complete(encode(key, value));
+            result.complete(asString(consulEntry) + SEPARATOR + consulEntry.toString());
         } catch (IOException e) {
             result.fail(e);
         }
         return result;
     }
 
-    public static <K, V> String encode(K key, V value) throws IOException {
-        String encodedKey = asString(key);
-        String encodedValue = asString(value);
-        return encodedKey + SEPARATOR + encodedValue + SEPARATOR + key + "->" + value;
-    }
-
-    public static <K, V> Future<GenericEntry<K, V>> decodeF(String object) {
-        Future<GenericEntry<K, V>> result = Future.future();
+    static <K, V> Future<ConsulEntry<K, V>> asConsulEntry_f(String object) {
+        Future<ConsulEntry<K, V>> result = Future.future();
         if (object == null) result.complete();
         else {
             try {
-                result.complete(decode(object));
+                String onlyBytes = object.substring(0, object.indexOf(SEPARATOR));
+                result.complete(asObject(onlyBytes));
             } catch (Exception e) {
                 result.fail(e);
             }
@@ -52,17 +57,10 @@ public class ConversationUtils {
         return result;
     }
 
-    public static <K, V> GenericEntry<K, V> decode(String object) throws Exception {
-        if (object == null) {
-            throw new VertxException("Can't decode a null object.");
-        }
-        String key = object.substring(0, object.indexOf(SEPARATOR));
-        String value = object.substring(object.indexOf(SEPARATOR) + SEPARATOR.length(), object.lastIndexOf(SEPARATOR));
-        K decodedKey = asObject(key);
-        V decodedValue = asObject(value);
-        return new GenericEntry(decodedKey, decodedValue);
+    public static void main(String[] args) {
+        String test = "Roman" + SEPARATOR + "AS";
+        System.out.println(test.substring(0, test.indexOf(SEPARATOR)));
     }
-
 
     private static String asString(Object object) throws IOException {
         ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
@@ -121,49 +119,20 @@ public class ConversationUtils {
         }
     }
 
-    public static class GenericEntry<K, V> implements Serializable {
-        private K key;
-        private V value;
-
-        public GenericEntry(K key, V value) {
-            this.key = key;
-            this.value = value;
-        }
-
-        public K getKey() {
-            return key;
-        }
-
-        public V getValue() {
-            return value;
-        }
-
-
-        @Override
-        public String toString() {
-            return "Entry{" +
-                    "key=" + key.toString() +
-                    ", value=" + value.toString() +
-                    '}';
-        }
-    }
-
-    // TODO: has to be removed.
-//    public static void main(String[] args) throws Exception {
-//        Integer key = 0;
-//        String value = "roman";
+    //    static <K, V> String encode(K key, V value) throws IOException {
+//        String encodedKey = asString(key);
+//        String encodedValue = asString(value);
+//        return encodedKey + SEPARATOR + encodedValue + SEPARATOR + key + "->" + value;
+//    }
 //
-//        encodeF(key, value)
-//                .compose(s -> {
-//                    System.out.println(s);
-//                    return Future.succeededFuture(s);
-//                }).compose(ConversationUtils::decodeF)
-//                .setHandler(event -> {
-//                    if (event.succeeded()) {
-//                        System.out.println(event.result());
-//                    } else {
-//                        System.out.println(event.cause());
-//                    }
-//                });
+//    static <K, V> ConsulEntry<K, V> decode(String object) throws Exception {
+//        if (object == null) {
+//            throw new VertxException("Can't decode a null object.");
+//        }
+//        String key = object.substring(0, object.indexOf(SEPARATOR));
+//        String value = object.substring(object.indexOf(SEPARATOR) + SEPARATOR.length(), object.lastIndexOf(SEPARATOR));
+//        K decodedKey = asObject(key);
+//        V decodedValue = asObject(value);
+//        return new ConsulEntry(decodedKey, decodedValue, "");
 //    }
 }

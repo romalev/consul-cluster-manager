@@ -1,4 +1,4 @@
-package io.vertx.spi.cluster.consul.impl.cache;
+package io.vertx.spi.cluster.consul.impl;
 
 
 import io.vertx.core.json.Json;
@@ -6,13 +6,12 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
-import io.vertx.spi.cluster.consul.impl.ChoosableSet;
-import io.vertx.spi.cluster.consul.impl.ConversationUtils;
 
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static io.vertx.spi.cluster.consul.impl.ConversationUtils.decode;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry;
 
 /**
  * Implementation of local IN-MEMORY multimap cache which is essentially concurrent hash map under the hood.
@@ -20,15 +19,17 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.decode;
  *
  * @author Roman Levytskyi
  */
-public final class CacheMultiMap<K, V> implements KvStoreListener {
+public final class CacheMultiMap<K, V> implements ConsulKvListener {
 
     private static final Logger log = LoggerFactory.getLogger(CacheMultiMap.class);
     private final String name;
+    private final String nodeId;
     private final Watch<KeyValueList> watch;
     private ConcurrentMap<K, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
 
-    CacheMultiMap(String name, Watch<KeyValueList> watch) {
+    CacheMultiMap(String name, String nodeId, Watch<KeyValueList> watch) {
         this.name = name;
+        this.nodeId = nodeId;
         this.watch = watch;
         start();
     }
@@ -37,70 +38,79 @@ public final class CacheMultiMap<K, V> implements KvStoreListener {
      * Start caching data.
      */
     private void start() {
-        log.trace("Cache for: " + name + " has been started.");
+        log.trace("[" + nodeId + "]" + " Cache for: " + name + " has been started.");
         watch.setHandler(kvWatchHandler()).start();
     }
 
     /**
      * Evicts the cache.
      */
-    public void clear() {
+    void clear() {
         cache.clear();
+    }
+
+    boolean containsKey(K k) {
+        return cache.containsKey(k);
     }
 
     /**
      * Gets an entry  from internal cache.
      */
-    public ChoosableSet<V> get(K k) {
+    ChoosableSet<V> get(K k) {
         return cache.get(k);
     }
 
     /**
      * Puts an entry to internal cache.
      */
-    public synchronized void put(K key, V value) {
+    synchronized void put(K key, V value) {
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) choosableSet = new ChoosableSet<>(1);
         choosableSet.add(value);
         cache.put(key, choosableSet);
-        log.trace("Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
+        log.trace("[" + nodeId + "]" + " Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
     }
 
     /**
      * Removes an entry from internal cache.
      */
-    public synchronized void remove(K key, V value) {
+    synchronized void remove(K key, V value) {
         ChoosableSet<V> choosableSet = cache.get(key);
         if (choosableSet == null) return;
         choosableSet.remove(value);
         if (choosableSet.isEmpty()) cache.remove(key);
         else cache.put(key, choosableSet);
-        log.trace("Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
+        log.trace("[" + nodeId + "]" + " Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
     }
 
-    public void putAll(K key, ChoosableSet<V> values) {
+    synchronized void putAllForKey(K key, ChoosableSet<V> values) {
         cache.put(key, values);
     }
 
-    public boolean isEmpty() {
+    ConcurrentMap<K, ChoosableSet<V>> get() {
+        return cache;
+    }
+
+    boolean isEmpty() {
         return cache.isEmpty();
     }
 
     @Override
     public void entryUpdated(EntryEvent event) {
-        ConversationUtils.GenericEntry<K, V> entry;
+        log.trace("[" + nodeId + "]" + " Entry: " + event.getEntry().getKey() + " is " + event.getEventType());
+        ConsulEntry<K, Set<V>> entry;
         try {
-            entry = decode(event.getEntry().getValue());
+            entry = asConsulEntry(event.getEntry().getValue());
         } catch (Exception e) {
             log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
             return;
         }
         switch (event.getEventType()) {
             case WRITE:
-                put(entry.getKey(), entry.getValue());
+                entry.getValue().forEach(v -> put(entry.getKey(), v));
                 break;
             case REMOVE:
-                remove(entry.getKey(), entry.getValue());
+                entry.getValue().forEach(v -> remove(entry.getKey(), v));
                 break;
             default:
                 break;

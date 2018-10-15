@@ -13,7 +13,6 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.RunTestOnContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.spi.cluster.consul.ConsulAgent;
-import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -43,7 +42,7 @@ public class ConsulAsyncMultiMapTest {
 
     private static final String nodeA = UUID.randomUUID().toString();
     private static final String nodeB = UUID.randomUUID().toString();
-    private static final boolean isEmbeddedConsulAgentEnabled = true;
+    private static final boolean isEmbeddedConsulAgentEnabled = false;
 
     private static ConsulAgent consulAgent;
     private static ConsulClient consulClient;
@@ -174,13 +173,11 @@ public class ConsulAsyncMultiMapTest {
         Future<Void> future_4 = Future.future();
         consulAsyncMultiMapNodeB.add(posts, postsNodeBSub, future_4.completer());
 
-        Future<Void> remove_f = Future.future();
-        consulAsyncMultiMapNodeA.removeAllForValue(usersNodeASub, remove_f.completer());
 
         CompositeFuture.all(future_1, future_2, future_3, future_4).compose(handler -> {
             context.assertTrue(handler.succeeded());
             Future<Void> res = Future.future();
-            remove_f.setHandler(rHandler -> {
+            consulAsyncMultiMapNodeA.removeAllForValue(usersNodeASub, rHandler -> {
                 context.assertTrue(rHandler.succeeded());
                 consulAsyncMultiMapNodeA.get(users, usersSubs -> {
                     context.assertTrue(usersSubs.succeeded());

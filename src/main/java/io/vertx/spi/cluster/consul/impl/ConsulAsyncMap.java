@@ -9,7 +9,6 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
-import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 
 import java.util.*;
 
@@ -24,12 +23,10 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
     private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
 
-    private final Vertx vertx;
     private final Map<K, V> cache;
 
-    public ConsulAsyncMap(String name, Vertx vertx, ConsulClient cC, CacheManager cM) {
-        super(name, cC);
-        this.vertx = vertx;
+    public ConsulAsyncMap(String name, String nodeId, Vertx vertx, ConsulClient cC, CacheManager cM) {
+        super(name, nodeId, vertx, cC);
         cache = cM.createAndGetCacheMap(name);
         // TODO : REMOVE IT.
         printOutAsyncMap();

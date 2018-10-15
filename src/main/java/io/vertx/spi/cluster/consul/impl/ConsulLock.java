@@ -1,5 +1,6 @@
 package io.vertx.spi.cluster.consul.impl;
 
+import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.Lock;
@@ -34,8 +35,8 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
     private final String lockName;
     private Optional<String> sessionId = Optional.empty();
 
-    public ConsulLock(String name, long timeout, ConsulClient consulClient) {
-        super("__vertx.locks", consulClient);
+    public ConsulLock(String name, String nodeId, long timeout, Vertx vertx, ConsulClient consulClient) {
+        super("__vertx.locks", nodeId, vertx, consulClient);
         this.lockName = name;
         acquire(timeout);
     }

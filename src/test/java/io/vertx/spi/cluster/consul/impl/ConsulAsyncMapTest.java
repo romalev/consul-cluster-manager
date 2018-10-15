@@ -9,7 +9,6 @@ import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.RunTestOnContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.spi.cluster.consul.ConsulAgent;
-import io.vertx.spi.cluster.consul.impl.cache.CacheManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -45,7 +44,7 @@ public class ConsulAsyncMapTest {
     private static AsyncMap<String, String> consulAsyncMap;
     private static CacheManager cacheManager;
 
-    private static final boolean isEmbeddedConsulAgentEnabled = true;
+    private static final boolean isEmbeddedConsulAgentEnabled = false;
 
     @ClassRule
     public static RunTestOnContext rule = new RunTestOnContext();
@@ -63,7 +62,7 @@ public class ConsulAsyncMapTest {
             }
             consulClient = ConsulClient.create(rule.vertx(), cCOps);
             cacheManager = new CacheManager(rule.vertx(), cCOps);
-            consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, Vertx.vertx(), consulClient, cacheManager);
+            consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, "Roman", Vertx.vertx(), consulClient, cacheManager);
             workerThread.complete();
         }, res -> {
             if (res.succeeded()) {
@@ -105,7 +104,7 @@ public class ConsulAsyncMapTest {
         String value = "valueADirect";
         String encodedValue = "";
         try {
-            encodedValue = ConversationUtils.encode(key, value);
+            encodedValue = ConversationUtils.asString(key, value, "Roman");
         } catch (IOException e) {
             context.fail(e);
         }
