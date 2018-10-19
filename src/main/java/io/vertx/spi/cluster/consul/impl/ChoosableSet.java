@@ -13,66 +13,66 @@ import java.util.Set;
  */
 public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
 
-    private final Set<T> ids;
-    private volatile Iterator<T> iter;
+  private final Set<T> ids;
+  private volatile Iterator<T> iter;
 
-    public ChoosableSet(int initialSize) {
-        ids = new ConcurrentHashSet<>(initialSize);
-    }
+  public ChoosableSet(int initialSize) {
+    ids = new ConcurrentHashSet<>(initialSize);
+  }
 
-    public Set<T> getIds() {
-        return ids;
-    }
+  public Set<T> getIds() {
+    return ids;
+  }
 
-    public int size() {
-        return ids.size();
-    }
+  public int size() {
+    return ids.size();
+  }
 
-    public void add(T elem) {
-        ids.add(elem);
-    }
+  public void add(T elem) {
+    ids.add(elem);
+  }
 
-    public void remove(T elem) {
-        ids.remove(elem);
-    }
+  public void remove(T elem) {
+    ids.remove(elem);
+  }
 
-    public void merge(Set<T> toMerge) {
-        ids.addAll(toMerge);
-    }
+  public void merge(Set<T> toMerge) {
+    ids.addAll(toMerge);
+  }
 
-    public boolean isEmpty() {
-        return ids.isEmpty();
-    }
+  public boolean isEmpty() {
+    return ids.isEmpty();
+  }
 
-    public boolean contains(T elem) {
-        return ids.contains(elem);
-    }
+  public boolean contains(T elem) {
+    return ids.contains(elem);
+  }
 
-    @Override
-    public Iterator<T> iterator() {
-        return ids.iterator();
-    }
+  @Override
+  public Iterator<T> iterator() {
+    return ids.iterator();
+  }
 
-    public synchronized T choose() {
-        if (!ids.isEmpty()) {
-            if (iter == null || !iter.hasNext()) {
-                iter = ids.iterator();
-            }
-            try {
-                return iter.next();
-            } catch (NoSuchElementException e) {
-                return null;
-            }
-        } else {
-            return null;
-        }
+  public synchronized T choose() {
+    if (!ids.isEmpty()) {
+      if (iter == null || !iter.hasNext()) {
+        iter = ids.iterator();
+      }
+      try {
+        return iter.next();
+      } catch (NoSuchElementException e) {
+        return null;
+      }
+    } else {
+      return null;
     }
+  }
 
-    @Override
-    public String toString() {
-        StringBuilder string = new StringBuilder();
-        ids.forEach(t -> string.append(t.toString()).append(";"));
-        return string.toString();
-    }
+  @Override
+  public String toString() {
+    StringBuilder string = new StringBuilder();
+    ids.forEach(t -> string.append(t.toString()).append(";"));
+    return string.toString();
+  }
 }
 

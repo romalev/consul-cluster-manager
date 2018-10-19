@@ -28,87 +28,87 @@ import io.vertx.ext.consul.KeyValueOptions;
  */
 public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
 
-    // key to access counter.
-    private final String consulKey;
+  // key to access counter.
+  private final String consulKey;
 
-    public ConsulCounter(String name, String nodeId, Vertx vertx, ConsulClient cC) {
-        super("__vertx.counters", nodeId, vertx, cC);
-        this.consulKey = keyPath(name);
-    }
+  public ConsulCounter(String name, String nodeId, Vertx vertx, ConsulClient cC) {
+    super("__vertx.counters", nodeId, vertx, cC);
+    this.consulKey = keyPath(name);
+  }
 
-    @Override
-    public void get(Handler<AsyncResult<Long>> resultHandler) {
-        getConsulKeyValue(consulKey)
-                .map(keyValue -> Long.parseLong(keyValue.getValue()))
-                .setHandler(resultHandler);
-    }
+  @Override
+  public void get(Handler<AsyncResult<Long>> resultHandler) {
+    getConsulKeyValue(consulKey)
+      .map(keyValue -> Long.parseLong(keyValue.getValue()))
+      .setHandler(resultHandler);
+  }
 
-    @Override
-    public void incrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(true, 1L, resultHandler);
-    }
+  @Override
+  public void incrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
+    calculateAndCompareAndSwap(true, 1L, resultHandler);
+  }
 
-    @Override
-    public void getAndIncrement(Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(false, 1L, resultHandler);
-    }
+  @Override
+  public void getAndIncrement(Handler<AsyncResult<Long>> resultHandler) {
+    calculateAndCompareAndSwap(false, 1L, resultHandler);
+  }
 
-    @Override
-    public void decrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(true, -1L, resultHandler);
-    }
+  @Override
+  public void decrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
+    calculateAndCompareAndSwap(true, -1L, resultHandler);
+  }
 
-    @Override
-    public void addAndGet(long value, Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(true, value, resultHandler);
-    }
+  @Override
+  public void addAndGet(long value, Handler<AsyncResult<Long>> resultHandler) {
+    calculateAndCompareAndSwap(true, value, resultHandler);
+  }
 
-    @Override
-    public void getAndAdd(long value, Handler<AsyncResult<Long>> resultHandler) {
-        calculateAndCompareAndSwap(false, value, resultHandler);
-    }
+  @Override
+  public void getAndAdd(long value, Handler<AsyncResult<Long>> resultHandler) {
+    calculateAndCompareAndSwap(false, value, resultHandler);
+  }
 
-    @Override
-    public void compareAndSet(long expected, long value, Handler<AsyncResult<Boolean>> resultHandler) {
-        getConsulKeyValue(consulKey)
-                .compose(keyValue -> {
-                    Future<Boolean> result = Future.future();
-                    final Long preValue = Long.parseLong(keyValue.getValue());
-                    if (preValue == expected) {
-                        putConsulValue(consulKey, String.valueOf(value), null).setHandler(result.completer());
-                    } else {
-                        result.complete(false);
-                    }
-                    return result;
-                })
-                .setHandler(resultHandler);
-    }
+  @Override
+  public void compareAndSet(long expected, long value, Handler<AsyncResult<Boolean>> resultHandler) {
+    getConsulKeyValue(consulKey)
+      .compose(keyValue -> {
+        Future<Boolean> result = Future.future();
+        final Long preValue = Long.parseLong(keyValue.getValue());
+        if (preValue == expected) {
+          putConsulValue(consulKey, String.valueOf(value), null).setHandler(result.completer());
+        } else {
+          result.complete(false);
+        }
+        return result;
+      })
+      .setHandler(resultHandler);
+  }
 
-    /**
-     * Performs calculation operation on the counter.
-     */
-    private void calculateAndCompareAndSwap(boolean postGet, Long value, Handler<AsyncResult<Long>> resultHandler) {
-        getConsulKeyValue(consulKey)
-                .compose(keyValue -> {
-                    Future<Long> result = Future.future();
-                    final Long preValue = Long.parseLong(keyValue.getValue());
-                    final Long postValue = Long.parseLong(keyValue.getValue()) + value;
-                    putConsulValue(consulKey, String.valueOf(postValue), new KeyValueOptions().setCasIndex(keyValue.getModifyIndex()))
-                            .setHandler(putRes -> {
-                                if (putRes.succeeded()) {
-                                    if (putRes.result()) {
-                                        result.complete(postGet ? postValue : preValue);
-                                    } else {
-                                        // do retry
-                                        // TODO: open question : overflow possible ? - define number of allowed retries ???
-                                        calculateAndCompareAndSwap(postGet, value, result.completer());
-                                    }
-                                } else {
-                                    result.fail(putRes.cause());
-                                }
-                            });
-                    return result;
-                })
-                .setHandler(resultHandler);
-    }
+  /**
+   * Performs calculation operation on the counter.
+   */
+  private void calculateAndCompareAndSwap(boolean postGet, Long value, Handler<AsyncResult<Long>> resultHandler) {
+    getConsulKeyValue(consulKey)
+      .compose(keyValue -> {
+        Future<Long> result = Future.future();
+        final Long preValue = Long.parseLong(keyValue.getValue());
+        final Long postValue = Long.parseLong(keyValue.getValue()) + value;
+        putConsulValue(consulKey, String.valueOf(postValue), new KeyValueOptions().setCasIndex(keyValue.getModifyIndex()))
+          .setHandler(putRes -> {
+            if (putRes.succeeded()) {
+              if (putRes.result()) {
+                result.complete(postGet ? postValue : preValue);
+              } else {
+                // do retry
+                // TODO: open question : overflow possible ? - define number of allowed retries ???
+                calculateAndCompareAndSwap(postGet, value, result.completer());
+              }
+            } else {
+              result.fail(putRes.cause());
+            }
+          });
+        return result;
+      })
+      .setHandler(resultHandler);
+  }
 }

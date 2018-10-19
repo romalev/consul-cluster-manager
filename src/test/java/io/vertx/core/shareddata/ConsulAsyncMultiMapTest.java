@@ -6,9 +6,9 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 
 public class ConsulAsyncMultiMapTest extends AsyncMultiMapTest {
 
-    @Override
-    protected ClusterManager getClusterManager() {
-        return new ConsulClusterManager(new ConsulClientOptions());
-    }
+  @Override
+  protected ClusterManager getClusterManager() {
+    return new ConsulClusterManager(new ConsulClientOptions());
+  }
 
 }

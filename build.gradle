@@ -8,33 +8,33 @@ apply plugin: 'findbugs'
 sourceCompatibility = 1.8
 
 repositories {
-    mavenCentral()
-    maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+  mavenCentral()
+  maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
 }
 
 ext {
-    junitVersion = "4.12"
-    vertxVersion = "3.5.4"
-    vertxSnaphotVersion = "3.6.0-SNAPSHOT"
-    logbackVersion = "1.2.3"
+  junitVersion = "4.12"
+  vertxVersion = "3.5.4"
+  vertxSnaphotVersion = "3.6.0-SNAPSHOT"
+  logbackVersion = "1.2.3"
 }
 
 
 findbugs {
-    ignoreFailures = true
+  ignoreFailures = true
 }
 
 dependencies {
-    testCompile group: 'junit', name: 'junit', version: junitVersion
-    testCompile group: 'com.pszymczyk.consul', name: 'embedded-consul', version: "1.1.1"
-    testCompile group: 'io.vertx', name: 'vertx-unit', version: vertxVersion
+  testCompile group: 'junit', name: 'junit', version: junitVersion
+  testCompile group: 'com.pszymczyk.consul', name: 'embedded-consul', version: "1.1.1"
+  testCompile group: 'io.vertx', name: 'vertx-unit', version: vertxSnaphotVersion
 
-    testCompile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
-    testCompile group: 'io.vertx', name: 'vertx-web', version: vertxSnaphotVersion
-    testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'tests', version: vertxSnaphotVersion
-    testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'test-sources', version: vertxSnaphotVersion
+  testCompile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
+  testCompile group: 'io.vertx', name: 'vertx-web', version: vertxSnaphotVersion
+  testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'tests', version: vertxSnaphotVersion
+  testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'test-sources', version: vertxSnaphotVersion
 
-    compile group: 'io.vertx', name: 'vertx-core', version: vertxSnaphotVersion
-    compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxSnaphotVersion
+  compile group: 'io.vertx', name: 'vertx-core', version: vertxSnaphotVersion
+  compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxSnaphotVersion
 
 }

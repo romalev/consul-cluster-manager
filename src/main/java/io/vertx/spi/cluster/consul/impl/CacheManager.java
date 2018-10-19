@@ -23,74 +23,74 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public final class CacheManager {
 
-    private final Map<String, Map<?, ?>> caches = new ConcurrentHashMap<>();
-    // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches are stopped.
-    private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
-    private final Vertx vertx;
-    private final ConsulClientOptions cClOptns;
-    private boolean active;
-    private CacheMultiMap<?, ?> cacheMultiMap;
+  private final Map<String, Map<?, ?>> caches = new ConcurrentHashMap<>();
+  // dedicated queue to store all the consul watches that belongs to a node - when a node leaves the cluster - all its appropriate watches are stopped.
+  private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
+  private final Vertx vertx;
+  private final ConsulClientOptions cClOptns;
+  private boolean active;
+  private CacheMultiMap<?, ?> cacheMultiMap;
 
-    public CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
-        this.vertx = vertx;
-        this.cClOptns = cClOptns;
-        active = true;
-    }
+  public CacheManager(Vertx vertx, ConsulClientOptions cClOptns) {
+    this.vertx = vertx;
+    this.cClOptns = cClOptns;
+    active = true;
+  }
 
-    /**
-     * Closes given cache manager.
-     */
-    public void close() {
-        // stopping all started watches.
-        watches.forEach(Watch::stop);
-        // caches eviction.
-        caches.values().forEach(Map::clear);
-        if (cacheMultiMap != null) cacheMultiMap.clear();
-        active = false;
-    }
+  /**
+   * Closes given cache manager.
+   */
+  public void close() {
+    // stopping all started watches.
+    watches.forEach(Watch::stop);
+    // caches eviction.
+    caches.values().forEach(Map::clear);
+    if (cacheMultiMap != null) cacheMultiMap.clear();
+    active = false;
+  }
 
-    /**
-     * @param name - cache's name
-     * @return fully initialized map cache.
-     */
-    <K, V> Map<K, V> createAndGetCacheMap(String name) {
-        checkIfActive();
-        return createAndGetCacheMap(name, Optional.empty());
-    }
+  /**
+   * @param name - cache's name
+   * @return fully initialized map cache.
+   */
+  <K, V> Map<K, V> createAndGetCacheMap(String name) {
+    checkIfActive();
+    return createAndGetCacheMap(name, Optional.empty());
+  }
 
-    /**
-     * @param name - cache's name
-     * @param map  - map's entries to be put directly put into the cache.
-     * @return fully initialized map cache.
-     */
-    <K, V> Map<K, V> createAndGetCacheMap(String name, Optional<Map<K, V>> map) {
-        checkIfActive();
-        return (Map<K, V>) caches.computeIfAbsent(name, key -> new CacheMap<>(name, createAndGetMapWatch(name), map));
-    }
+  /**
+   * @param name - cache's name
+   * @param map  - map's entries to be put directly put into the cache.
+   * @return fully initialized map cache.
+   */
+  <K, V> Map<K, V> createAndGetCacheMap(String name, Optional<Map<K, V>> map) {
+    checkIfActive();
+    return (Map<K, V>) caches.computeIfAbsent(name, key -> new CacheMap<>(name, createAndGetMapWatch(name), map));
+  }
 
-    <K, V> CacheMultiMap<K, V> createAndGetCacheMultiMap(String name, String nodeId) {
-        cacheMultiMap = new CacheMultiMap<>(name, nodeId, createAndGetMapWatch(name));
-        return (CacheMultiMap<K, V>) cacheMultiMap;
-    }
+  <K, V> CacheMultiMap<K, V> createAndGetCacheMultiMap(String name, String nodeId) {
+    cacheMultiMap = new CacheMultiMap<>(name, nodeId, createAndGetMapWatch(name));
+    return (CacheMultiMap<K, V>) cacheMultiMap;
+  }
 
-    /**
-     * Creates consul (kv store specific) watch.
-     */
-    Watch<KeyValueList> createAndGetMapWatch(String mapName) {
-        Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
-        watches.add(kvWatch);
-        return kvWatch;
-    }
+  /**
+   * Creates consul (kv store specific) watch.
+   */
+  Watch<KeyValueList> createAndGetMapWatch(String mapName) {
+    Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
+    watches.add(kvWatch);
+    return kvWatch;
+  }
 
-    /**
-     * Checks whether given cache manager is active.
-     *
-     * @throws VertxException if cache manager is not active.
-     */
-    private void checkIfActive() {
-        if (!active) {
-            throw new VertxException("Cache manager is not active.");
-        }
+  /**
+   * Checks whether given cache manager is active.
+   *
+   * @throws VertxException if cache manager is not active.
+   */
+  private void checkIfActive() {
+    if (!active) {
+      throw new VertxException("Cache manager is not active.");
     }
+  }
 
 }

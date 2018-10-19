@@ -20,49 +20,49 @@ import java.util.Objects;
  * @See {@link ConversationUtils}
  */
 final class ConsulEntry<K, V> implements Serializable {
-    final private K key;
-    final private V value;
-    final private String nodeId; // nodeId given consul entry belongs to
+  final private K key;
+  final private V value;
+  final private String nodeId; // nodeId given consul entry belongs to
 
-    ConsulEntry(K key, V value, String nodeId) {
-        this.key = key;
-        this.value = value;
-        this.nodeId = nodeId;
-    }
+  ConsulEntry(K key, V value, String nodeId) {
+    this.key = key;
+    this.value = value;
+    this.nodeId = nodeId;
+  }
 
-    public K getKey() {
-        return key;
-    }
+  public K getKey() {
+    return key;
+  }
 
-    public V getValue() {
-        return value;
-    }
+  public V getValue() {
+    return value;
+  }
 
-    public String getNodeId() {
-        return nodeId;
-    }
+  public String getNodeId() {
+    return nodeId;
+  }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        ConsulEntry<?, ?> that = (ConsulEntry<?, ?>) o;
-        return Objects.equals(getKey(), that.getKey()) &&
-                Objects.equals(getValue(), that.getValue()) &&
-                Objects.equals(nodeId, that.nodeId);
-    }
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    ConsulEntry<?, ?> that = (ConsulEntry<?, ?>) o;
+    return Objects.equals(getKey(), that.getKey()) &&
+      Objects.equals(getValue(), that.getValue()) &&
+      Objects.equals(nodeId, that.nodeId);
+  }
 
-    @Override
-    public int hashCode() {
-        return Objects.hash(getKey(), getValue(), nodeId);
-    }
+  @Override
+  public int hashCode() {
+    return Objects.hash(getKey(), getValue(), nodeId);
+  }
 
-    @Override
-    public String toString() {
-        return "ConsulEntry{" +
-                "key=" + key +
-                ", value=" + value +
-                ", nodeId='" + nodeId + '\'' +
-                '}';
-    }
+  @Override
+  public String toString() {
+    return "ConsulEntry{" +
+      "key=" + key +
+      ", value=" + value +
+      ", nodeId='" + nodeId + '\'' +
+      '}';
+  }
 }
