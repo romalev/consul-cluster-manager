@@ -122,6 +122,7 @@ public class ConsulClusterManager implements ClusterManager {
 
   @Override
   public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
+    Objects.requireNonNull(name);
     Future<Counter> counterFuture = Future.future();
     Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, nodeId, vertx, cC));
     counterFuture.complete(counter);

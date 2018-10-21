@@ -76,7 +76,7 @@ abstract class ConsulMap<K, V> {
     Future<Boolean> future = Future.future();
     consulClient.putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + nodeId + "] " + key + " -> " + value + " with session id: " + keyValueOptions.getAcquireSession() + " put is " + resultHandler.result());
+        log.trace("[" + nodeId + "] " + key + " -> " + value + " put is " + resultHandler.result());
         future.complete(resultHandler.result());
       } else {
         log.error("[" + nodeId + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
