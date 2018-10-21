@@ -6,7 +6,10 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.shareddata.Counter;
 import io.vertx.ext.consul.ConsulClient;
+import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueOptions;
+
+import java.util.Objects;
 
 /**
  * Consul-based implementation of an asynchronous (distributed) counter that can be used to across the cluster to maintain a consistent count.
@@ -38,42 +41,49 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
 
   @Override
   public void get(Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     getConsulKeyValue(consulKey)
-      .map(keyValue -> Long.parseLong(keyValue.getValue()))
+      .map(this::extractActualCounterValue)
       .setHandler(resultHandler);
   }
 
   @Override
   public void incrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     calculateAndCompareAndSwap(true, 1L, resultHandler);
   }
 
   @Override
   public void getAndIncrement(Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     calculateAndCompareAndSwap(false, 1L, resultHandler);
   }
 
   @Override
   public void decrementAndGet(Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     calculateAndCompareAndSwap(true, -1L, resultHandler);
   }
 
   @Override
   public void addAndGet(long value, Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     calculateAndCompareAndSwap(true, value, resultHandler);
   }
 
   @Override
   public void getAndAdd(long value, Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     calculateAndCompareAndSwap(false, value, resultHandler);
   }
 
   @Override
   public void compareAndSet(long expected, long value, Handler<AsyncResult<Boolean>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     getConsulKeyValue(consulKey)
       .compose(keyValue -> {
         Future<Boolean> result = Future.future();
-        final Long preValue = Long.parseLong(keyValue.getValue());
+        final Long preValue = extractActualCounterValue(keyValue);
         if (preValue == expected) {
           putConsulValue(consulKey, String.valueOf(value), null).setHandler(result.completer());
         } else {
@@ -88,11 +98,12 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
    * Performs calculation operation on the counter.
    */
   private void calculateAndCompareAndSwap(boolean postGet, Long value, Handler<AsyncResult<Long>> resultHandler) {
+    Objects.requireNonNull(resultHandler);
     getConsulKeyValue(consulKey)
       .compose(keyValue -> {
         Future<Long> result = Future.future();
-        final Long preValue = Long.parseLong(keyValue.getValue());
-        final Long postValue = Long.parseLong(keyValue.getValue()) + value;
+        final Long preValue = extractActualCounterValue(keyValue);
+        final Long postValue = preValue + value;
         putConsulValue(consulKey, String.valueOf(postValue), new KeyValueOptions().setCasIndex(keyValue.getModifyIndex()))
           .setHandler(putRes -> {
             if (putRes.succeeded()) {
@@ -110,5 +121,12 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
         return result;
       })
       .setHandler(resultHandler);
+  }
+
+  /**
+   * Extract counter value (which is {@link Long}) out of {@link KeyValue}
+   */
+  private Long extractActualCounterValue(KeyValue keyValue) {
+    return keyValue == null || keyValue.getValue() == null ? 0L : Long.valueOf(keyValue.getValue());
   }
 }
