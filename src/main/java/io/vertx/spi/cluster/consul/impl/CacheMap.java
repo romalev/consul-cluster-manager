@@ -54,13 +54,6 @@ final class CacheMap<K, V> implements Map<K, V>, ConsulKvListener {
     watch.setHandler(kvWatchHandler()).start();
   }
 
-  /**
-   * Evicts the cache.
-   */
-  private void evict() {
-    cache.clear();
-  }
-
   @Override
   public int size() {
     return cache.size();
@@ -105,7 +98,7 @@ final class CacheMap<K, V> implements Map<K, V>, ConsulKvListener {
 
   @Override
   public void clear() {
-    evict();
+    cache.clear();
   }
 
   @Override

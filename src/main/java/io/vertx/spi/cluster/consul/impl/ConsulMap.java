@@ -3,18 +3,20 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.*;
 
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static io.vertx.core.Future.succeededFuture;
-import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry_f;
-import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asString_f;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureConsulEntry;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureString;
 
 /**
  * Abstract map functionality for clustering maps.
@@ -58,9 +60,9 @@ abstract class ConsulMap<K, V> {
    * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
    */
   Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
-    log.trace("[" + nodeId + "]" + " - Putting: " + k + " -> " + v + " to: " + name + " with session : " + keyValueOptions.getAcquireSession());
+    log.trace("[" + nodeId + "]" + " - Putting: " + k + " -> " + v + " to: " + name);
     return assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> asString_f(k, v, nodeId))
+      .compose(aVoid -> asFutureString(k, v, nodeId))
       .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
   }
 
@@ -95,7 +97,7 @@ abstract class ConsulMap<K, V> {
   Future<V> getValue(K k) {
     return assertKeyIsNotNull(k)
       .compose(aVoid -> getConsulKeyValue(keyPath(k)))
-      .compose(consulValue -> asConsulEntry_f(consulValue.getValue()))
+      .compose(consulValue -> asFutureConsulEntry(consulValue.getValue()))
       .compose(genericKeyValue -> genericKeyValue == null ? succeededFuture() : succeededFuture((V) genericKeyValue.getValue()));
   }
 
@@ -139,22 +141,9 @@ abstract class ConsulMap<K, V> {
   }
 
   /**
-   * Handles result of remove operation.
-   */
-  private void handleRemoveResult(String key, Future<Boolean> result, AsyncResult<Void> resultHandler) {
-    if (resultHandler.succeeded()) {
-      log.trace("[" + nodeId + "] " + key + " -> " + " remove is true.");
-      result.complete(true);
-    } else {
-      log.error("[" + nodeId + "]" + " - Failed to remove an entry by key: " + key, result.cause());
-      result.fail(resultHandler.cause());
-    }
-  }
-
-  /**
    * Clears the entire map.
    */
-  Future<Void> clearUp() {
+  Future<Void> delete() {
     Future<Void> future = Future.future();
     consulClient.deleteValues(name, result -> {
       if (result.succeeded()) future.complete();
@@ -314,6 +303,10 @@ abstract class ConsulMap<K, V> {
   }
 
   String keyPath(Object k) {
+    // we can't simply ship sequence of bytes to consul.
+    if (k instanceof Buffer) {
+      return name + "/" + Base64.getEncoder().encodeToString(((Buffer) k).getBytes());
+    }
     return name + "/" + k.toString();
   }
 
@@ -326,6 +319,19 @@ abstract class ConsulMap<K, V> {
    */
   List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
     return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
+  }
+
+  /**
+   * Handles result of remove operation.
+   */
+  private void handleRemoveResult(String key, Future<Boolean> result, AsyncResult<Void> resultHandler) {
+    if (resultHandler.succeeded()) {
+      log.trace("[" + nodeId + "] " + key + " -> " + " remove is true.");
+      result.complete(true);
+    } else {
+      log.error("[" + nodeId + "]" + " - Failed to remove an entry by key: " + key, result.cause());
+      result.fail(resultHandler.cause());
+    }
   }
 
 }
