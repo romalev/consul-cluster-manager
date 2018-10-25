@@ -1,9 +1,6 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
@@ -11,6 +8,8 @@ import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.*;
+
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureConsulEntry;
 
 /**
  * Distributed async map implementation based on consul key-value store.
@@ -34,19 +33,14 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
   @Override
   public void get(K k, Handler<AsyncResult<V>> asyncResultHandler) {
-    V v = cache.get(k);
-    if (v == null) {
-      // fallback to original consul store.
-      getValue(k)
-        .compose(value -> {
-          // immediately update the cache by new entry.
-          if (value != null) cache.put(k, value);
-          return Future.succeededFuture(value);
-        })
-        .setHandler(asyncResultHandler);
-    } else {
-      Future.succeededFuture(v).setHandler(asyncResultHandler);
-    }
+    assertKeyIsNotNull(k)
+      .compose(aVoid ->
+        cache.containsKey(k) ? Future.succeededFuture(cache.get(k)) : getValue(k)
+          .compose(value -> {
+            // immediately update the cache by new entry.
+            if (value != null) cache.put(k, value);
+            return Future.succeededFuture(value);
+          })).setHandler(asyncResultHandler);
   }
 
   @Override
@@ -161,30 +155,54 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
   @Override
   public void clear(Handler<AsyncResult<Void>> resultHandler) {
-    cache.clear();
-    clearUp().setHandler(resultHandler);
+    delete().compose(aVoid -> {
+      cache.clear();
+      return Future.<Void>succeededFuture();
+    }).setHandler(resultHandler);
   }
 
   @Override
   public void size(Handler<AsyncResult<Integer>> resultHandler) {
-    Future.succeededFuture(cache.size()).setHandler(resultHandler);
-
+    consulKeys().compose(list -> Future.succeededFuture(list.size())).setHandler(resultHandler);
   }
 
   @Override
   public void keys(Handler<AsyncResult<Set<K>>> asyncResultHandler) {
-    Future.succeededFuture(cache.keySet()).setHandler(asyncResultHandler);
+    entries().compose(kvMap -> Future.succeededFuture(kvMap.keySet())).setHandler(asyncResultHandler);
   }
 
   @Override
   public void values(Handler<AsyncResult<List<V>>> asyncResultHandler) {
-    List<V> values = new ArrayList<>(cache.values());
-    Future.succeededFuture(values).setHandler(asyncResultHandler);
+    entries().compose(kvMap -> Future.<List<V>>succeededFuture(new ArrayList<>(kvMap.values())).setHandler(asyncResultHandler));
   }
 
   @Override
   public void entries(Handler<AsyncResult<Map<K, V>>> asyncResultHandler) {
-    Future.succeededFuture(cache).setHandler(asyncResultHandler);
+    entries().setHandler(asyncResultHandler);
+  }
+
+  /**
+   * Given implementation does NOT take advantage of internal cache :(
+   * <p>
+   * POSSIBLE IMPROVEMENT: adjust internal cache to be based on MultiKeyMap
+   * so then we can query it by actual consul kv store keys (which are not being encoded and are plain strings)
+   *
+   * @return entries from consul kv store.
+   */
+  private Future<Map<K, V>> entries() {
+    return consulEntries()
+      .compose(kvEntries -> {
+        List<Future> futureList = new ArrayList<>();
+        kvEntries.getList().forEach(kv -> futureList.add(asFutureConsulEntry(kv.getValue())));
+        return CompositeFuture.all(futureList).map(compositeFuture -> {
+          Map<K, V> map = new HashMap<>();
+          for (int i = 0; i < compositeFuture.size(); i++) {
+            ConsulEntry<K, V> consulEntry = compositeFuture.resultAt(i);
+            map.put(consulEntry.getKey(), consulEntry.getValue());
+          }
+          return map;
+        });
+      });
   }
 
   /**

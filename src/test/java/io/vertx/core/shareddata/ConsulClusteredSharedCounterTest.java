@@ -11,6 +11,7 @@ public class ConsulClusteredSharedCounterTest extends ClusteredSharedCounterTest
 
   private ConsulClient consulClient;
 
+  @Override
   public void before() throws Exception {
     super.before();
     if (consulClient == null) {

@@ -15,7 +15,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry;
-import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asString_f;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureString;
 
 /**
  * Distributed consul async multimap implementation. IMPORTANT: purpose of async multimap in vertx cluster management is to hold mapping between
@@ -173,7 +173,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   }
 
   private Future<Boolean> put(K key, Set<V> vs) {
-    return asString_f(key, vs, nodeId)
+    return asFutureString(key, vs, nodeId)
       .compose(encodedValue -> putConsulValue(nodeKeyPath(key.toString()), encodedValue, kvOpts));
   }
 

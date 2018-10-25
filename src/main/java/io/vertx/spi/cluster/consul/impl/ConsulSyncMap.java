@@ -89,7 +89,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public void clear() {
-    clearUp().setHandler(cHandler -> {
+    delete().setHandler(cHandler -> {
       if (cHandler.succeeded()) cache.clear();
     });
   }

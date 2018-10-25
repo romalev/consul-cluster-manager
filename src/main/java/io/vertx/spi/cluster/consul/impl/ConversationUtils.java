@@ -2,6 +2,7 @@ package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.impl.ClusterSerializable;
 
 import java.io.*;
@@ -20,46 +21,51 @@ import java.util.Base64;
  */
 class ConversationUtils {
 
-  private static final String SEPARATOR = "--SEPARATOR--";
+  private static final String KEY_TAG = "KEY";
+  private static final String VALUE_TAG = "VALUE";
+  private static final String NODE_ID_TAG = "NODE_ID";
+
+  private static final String INFO_TAG = "INFO";
+  private static final String SEPARATOR = "ENCODED_VALUE";
 
   static <K, V> String asString(K key, V value, String nodeId) throws IOException {
-    ConsulEntry<K, V> consulEntry = new ConsulEntry<>(key, value, nodeId);
-    return asString(consulEntry);
+    JsonObject jsonObject = new JsonObject()
+      .put(KEY_TAG, asString(key))
+      .put(VALUE_TAG, asString(value))
+      .put(NODE_ID_TAG, nodeId)
+      .put(INFO_TAG, value.toString());
+    return jsonObject.encodePrettily();
   }
 
   static <K, V> ConsulEntry<K, V> asConsulEntry(String consulEntry) throws Exception {
-    String onlyBytes = consulEntry.substring(0, consulEntry.indexOf(SEPARATOR));
-    return asObject(onlyBytes);
+    JsonObject jsonObject = new JsonObject(consulEntry);
+    K key = asObject(jsonObject.getString(KEY_TAG));
+    V value = asObject(jsonObject.getString(VALUE_TAG));
+    String nodeId = jsonObject.getString(NODE_ID_TAG);
+    return new ConsulEntry<>(key, value, nodeId);
   }
 
-  static <K, V> Future<String> asString_f(K key, V value, String nodeId) {
-    final ConsulEntry<K, V> consulEntry = new ConsulEntry<>(key, value, nodeId);
+  static <K, V> Future<String> asFutureString(K key, V value, String nodeId) {
     Future<String> result = Future.future();
     try {
-      result.complete(asString(consulEntry) + SEPARATOR + consulEntry.toString());
+      result.complete(asString(key, value, nodeId));
     } catch (IOException e) {
       result.fail(e);
     }
     return result;
   }
 
-  static <K, V> Future<ConsulEntry<K, V>> asConsulEntry_f(String object) {
+  static <K, V> Future<ConsulEntry<K, V>> asFutureConsulEntry(String object) {
     Future<ConsulEntry<K, V>> result = Future.future();
     if (object == null) result.complete();
     else {
       try {
-        String onlyBytes = object.substring(0, object.indexOf(SEPARATOR));
-        result.complete(asObject(onlyBytes));
+        result.complete(asConsulEntry(object));
       } catch (Exception e) {
         result.fail(e);
       }
     }
     return result;
-  }
-
-  public static void main(String[] args) {
-    String test = "Roman" + SEPARATOR + "AS";
-    System.out.println(test.substring(0, test.indexOf(SEPARATOR)));
   }
 
   private static String asString(Object object) throws IOException {
@@ -118,21 +124,4 @@ class ConversationUtils {
       return (T) objectIn.readObject();
     }
   }
-
-  //    static <K, V> String encode(K key, V value) throws IOException {
-//        String encodedKey = asString(key);
-//        String encodedValue = asString(value);
-//        return encodedKey + SEPARATOR + encodedValue + SEPARATOR + key + "->" + value;
-//    }
-//
-//    static <K, V> ConsulEntry<K, V> decode(String object) throws Exception {
-//        if (object == null) {
-//            throw new VertxException("Can't decode a null object.");
-//        }
-//        String key = object.substring(0, object.indexOf(SEPARATOR));
-//        String value = object.substring(object.indexOf(SEPARATOR) + SEPARATOR.length(), object.lastIndexOf(SEPARATOR));
-//        K decodedKey = asObject(key);
-//        V decodedValue = asObject(value);
-//        return new ConsulEntry(decodedKey, decodedValue, "");
-//    }
 }
