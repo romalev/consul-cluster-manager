@@ -1,7 +1,7 @@
 package io.vertx.spi.cluster.consul.impl;
 
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
-import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ConsulClient;
@@ -9,16 +9,11 @@ import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.Collection;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
  * Distributed sync map implementation based on consul key-value store.
- * <p>
- * Given implementation fully relies on internal cache (consul client doesn't have any cache built-in so we are sort of forced to come up with something custom)
- * which essentially is {@link java.util.concurrent.ConcurrentHashMap}.
- * <p>
- * Sync map's entries are (AND ALWAYS MUST BE) EPHEMERAL.
+ * Essentially it holds HA INFO about cluster node's vertices which means map's entries are (AND ALWAYS MUST BE) EPHEMERAL.
  *
  * @author Roman Levytskyi
  */
@@ -27,59 +22,58 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
 
   private final KeyValueOptions kvOptions;
-  private final Map<K, V> cache;
+  private long timeout = 1500;
 
-  public ConsulSyncMap(String name, String nodeId, Vertx vx, ConsulClient cC, CacheManager cM, String sessionId, Map<K, V> haInfo) {
+  public ConsulSyncMap(String name, String nodeId, Vertx vx, ConsulClient cC, String sessionId) {
     super(name, nodeId, vx, cC);
-    this.cache = cM.createAndGetCacheMap(name, Optional.of(haInfo));
     // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
     this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
-    printCache();
   }
 
   @Override
   public int size() {
-    return cache.size();
+    return toSync(consulKeys().compose(list -> Future.succeededFuture(list.size())), timeout);
   }
 
   @Override
   public boolean isEmpty() {
-    return cache.isEmpty();
+    return toSync(consulKeys().compose(list -> Future.succeededFuture(list.isEmpty())), timeout);
   }
 
   @Override
   public boolean containsKey(Object key) {
-    return cache.containsKey(key);
+    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.keySet().contains(key))), timeout);
   }
 
   @Override
   public boolean containsValue(Object value) {
-    return cache.containsValue(value);
+    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.values().contains(value))), timeout);
   }
 
   @Override
   public V get(Object key) {
-    return cache.get(key);
+    return toSync(getValue((K) key), timeout);
   }
 
   @Override
   public V put(K key, V value) {
-    putValue(key, value, kvOptions).setHandler(putHandler -> {
-      if (putHandler.succeeded() && putHandler.result()) cache.put(key, value);
-        // TODO : retry policy should be introduced here - can't be retried forever.
-      else put(key, value);
-
-    });
-    return value;
+    return toSync(putValue(key, value, kvOptions).compose(aBoolean -> {
+      if (aBoolean) return Future.succeededFuture(value);
+      else return Future.failedFuture("[" + nodeId + "]" + " failed to put KV: " + key + " -> " + value);
+    }), timeout);
   }
 
   @Override
   public V remove(Object key) {
-    removeConsulValue(keyPath(key)).setHandler(removeHandler -> {
-      if (removeHandler.succeeded() && removeHandler.result()) cache.remove(key);
-      else remove(key);
-    });
-    return cache.get(key);
+    return toSync(getValue((K) key).compose(v -> {
+      if (v == null) return Future.succeededFuture();
+      else {
+        return delete((K) key).compose(aBoolean -> {
+          if (aBoolean) return Future.succeededFuture(v);
+          else return Future.failedFuture("[" + nodeId + "]" + " failed to remove an entry by K: " + key);
+        });
+      }
+    }), timeout);
   }
 
   @Override
@@ -89,30 +83,21 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public void clear() {
-    delete().setHandler(cHandler -> {
-      if (cHandler.succeeded()) cache.clear();
-    });
+    toSync(deleteAll(), timeout);
   }
 
   @Override
   public Set<K> keySet() {
-    return cache.keySet();
+    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.keySet())), timeout);
   }
 
   @Override
   public Collection<V> values() {
-    return cache.values();
+    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.values())), timeout);
   }
 
   @Override
   public Set<Entry<K, V>> entrySet() {
-    return cache.entrySet();
-  }
-
-
-  // just a dummy helper method [it's gonna get removed] to print out every 5 sec the data that resides within the internal cache.
-  // TODO : removed it when consul cluster manager is more or less stable.
-  private void printCache() {
-    vertx.setPeriodic(15000, handler -> log.trace("Internal HaInfo (Sync) Map: " + Json.encodePrettily(cache)));
+    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.entrySet())), timeout);
   }
 }

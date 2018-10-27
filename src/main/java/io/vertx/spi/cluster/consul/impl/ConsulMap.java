@@ -1,18 +1,16 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.*;
 
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static io.vertx.core.Future.succeededFuture;
 import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureConsulEntry;
@@ -60,7 +58,6 @@ abstract class ConsulMap<K, V> {
    * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
    */
   Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
-    log.trace("[" + nodeId + "]" + " - Putting: " + k + " -> " + v + " to: " + name);
     return assertKeyAndValueAreNotNull(k, v)
       .compose(aVoid -> asFutureString(k, v, nodeId))
       .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
@@ -78,7 +75,7 @@ abstract class ConsulMap<K, V> {
     Future<Boolean> future = Future.future();
     consulClient.putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + nodeId + "] " + key + " -> " + value + " put is " + resultHandler.result());
+        // log.trace("[" + nodeId + "] " + key + " -> " + value + " put is " + resultHandler.result());
         future.complete(resultHandler.result());
       } else {
         log.error("[" + nodeId + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
@@ -98,7 +95,27 @@ abstract class ConsulMap<K, V> {
     return assertKeyIsNotNull(k)
       .compose(aVoid -> getConsulKeyValue(keyPath(k)))
       .compose(consulValue -> asFutureConsulEntry(consulValue.getValue()))
-      .compose(genericKeyValue -> genericKeyValue == null ? succeededFuture() : succeededFuture((V) genericKeyValue.getValue()));
+      .compose(consulEntry -> consulEntry == null ? succeededFuture() : succeededFuture((V) consulEntry.getValue()));
+  }
+
+  Future<Map<K, V>> entries() {
+    return consulEntries()
+      .compose(kvEntries -> {
+        List<Future> futureList = new ArrayList<>();
+        kvEntries.forEach(kv -> futureList.add(asFutureConsulEntry(kv.getValue())));
+        return CompositeFuture.all(futureList).map(compositeFuture -> {
+          Map<K, V> map = new HashMap<>();
+          for (int i = 0; i < compositeFuture.size(); i++) {
+            ConsulEntry<K, V> consulEntry = compositeFuture.resultAt(i);
+            map.put(consulEntry.getKey(), consulEntry.getValue());
+          }
+          return map;
+        });
+      });
+  }
+
+  Future<Boolean> delete(K key) {
+    return deleteConsulValue(keyPath(key));
   }
 
   /**
@@ -112,7 +129,7 @@ abstract class ConsulMap<K, V> {
     consulClient.getValue(consulKey, resultHandler -> {
       if (resultHandler.succeeded()) {
         // note: resultHandler.result().getValue() is null if nothing was found.
-        log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
+        // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
         future.complete(resultHandler.result());
       } else {
         log.error("[" + nodeId + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
@@ -125,25 +142,25 @@ abstract class ConsulMap<K, V> {
   /**
    * Remove the key/value pair that corresponding to the specified key.
    */
-  Future<Boolean> removeConsulValue(String key) {
+  Future<Boolean> deleteConsulValue(String key) {
     Future<Boolean> result = Future.future();
-    consulClient.deleteValue(key, resultHandler -> handleRemoveResult(key, result, resultHandler));
+    consulClient.deleteValue(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
     return result;
   }
 
   /**
    * Removes all the key/value pair that corresponding to the specified key prefix.
    */
-  Future<Boolean> removeConsulValues(String key) {
+  Future<Boolean> deleteConsulValues(String key) {
     Future<Boolean> result = Future.future();
-    consulClient.deleteValues(key, resultHandler -> handleRemoveResult(key, result, resultHandler));
+    consulClient.deleteValues(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
     return result;
   }
 
   /**
    * Clears the entire map.
    */
-  Future<Void> delete() {
+  Future<Void> deleteAll() {
     Future<Void> future = Future.future();
     consulClient.deleteValues(name, result -> {
       if (result.succeeded()) future.complete();
@@ -155,14 +172,11 @@ abstract class ConsulMap<K, V> {
     return future;
   }
 
-  /**
-   * @return map's keys
-   */
   Future<List<String>> consulKeys() {
     Future<List<String>> futureKeys = Future.future();
     consulClient.getKeys(name, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
+        // log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
         futureKeys.complete(resultHandler.result());
       } else {
         log.error("[" + nodeId + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
@@ -172,13 +186,10 @@ abstract class ConsulMap<K, V> {
     return futureKeys;
   }
 
-  /**
-   * @return map's key value list
-   */
-  Future<KeyValueList> consulEntries() {
-    Future<KeyValueList> keyValueListFuture = Future.future();
+  Future<List<KeyValue>> consulEntries() {
+    Future<List<KeyValue>> keyValueListFuture = Future.future();
     consulClient.getValues(name, resultHandler -> {
-      if (resultHandler.succeeded()) keyValueListFuture.complete(resultHandler.result());
+      if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
       else {
         log.error("[" + nodeId + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
         keyValueListFuture.fail(resultHandler.cause());
@@ -277,6 +288,32 @@ abstract class ConsulMap<K, V> {
     return future;
   }
 
+
+  /**
+   * Obtains a result from future by and waiting for it's completion.
+   * Note: should never be called from event loop context!
+   *
+   * @param future  - future holding result of future computation.
+   * @param timeout - the maximum time to wait.
+   * @param <T>     - result type.
+   * @return computation result.
+   */
+  <T> T toSync(Future<T> future, long timeout) {
+    CompletableFuture<T> completableFuture = new CompletableFuture<>();
+    future.setHandler(event -> {
+      if (event.succeeded()) completableFuture.complete(event.result());
+      else completableFuture.completeExceptionally(event.cause());
+    });
+    T result;
+    try {
+      result = completableFuture.get(timeout, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException | ExecutionException | TimeoutException e) {
+      log.error("Exception has occurred: " + e);
+      throw new VertxException(e);
+    }
+    return result;
+  }
+
   /**
    * Verifies whether value is not null.
    */
@@ -324,7 +361,7 @@ abstract class ConsulMap<K, V> {
   /**
    * Handles result of remove operation.
    */
-  private void handleRemoveResult(String key, Future<Boolean> result, AsyncResult<Void> resultHandler) {
+  private void handleDeleteResult(String key, Future<Boolean> result, AsyncResult<Void> resultHandler) {
     if (resultHandler.succeeded()) {
       log.trace("[" + nodeId + "] " + key + " -> " + " remove is true.");
       result.complete(true);

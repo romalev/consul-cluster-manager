@@ -64,6 +64,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   @Override
   public void get(K k, Handler<AsyncResult<ChoosableIterable<V>>> asyncResultHandler) {
         /*
+        TODO:
         Keeping subs cache in sync with what's stored in consul KV store is a little tricky.
         As entries are added or removed the ConsulKvListener will be called but when the node joins the cluster
         - it isn't provided the initial state via the ConsulKvListener therefore -> the first time map get is called for
@@ -151,7 +152,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
           Set<V> subs = new HashSet<>(vs);
           subs.remove(value);
           if (subs.isEmpty()) {
-            return removeConsulValue(keyPath)
+            return deleteConsulValue(keyPath)
               .compose(removeSucceeded -> {
                 // immediately update the internal cache.
                 cache.remove(key, value);
@@ -164,7 +165,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         });
     } else {
       String keyPath = addressKeyPath(key.toString());
-      return removeConsulValues(keyPath).compose(event -> {
+      return deleteConsulValues(keyPath).compose(event -> {
         // immediately update the internal cache.
         cache.remove(key, value);
         return Future.succeededFuture(true);
@@ -208,7 +209,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
             future.fail(e);
           }
         });
-        log.trace("[" + nodeId + "]" + " - fetched : + " + resultSet + " by address: " + consulKey);
+        log.trace("[" + nodeId + "]" + " - fetched : " + resultSet + " by address: " + consulKey);
         future.complete(resultSet);
       }
     });

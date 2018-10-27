@@ -16,10 +16,7 @@ import io.vertx.ext.consul.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-
-import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry;
 
 /**
  * Main manager is accountable for:
@@ -55,7 +52,6 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements Cons
 
   private final CacheManager cM;
   private final String checkId;
-  private final Map haInfoMap = new ConcurrentHashMap<>(); // dedicated cache to initialize and keep haInfo.
   private JsonObject tcpAddress = new JsonObject(); // tcp address of node.
   // local cache of all vertx cluster nodes.
   private Set<String> nodes = new HashSet<>();
@@ -87,7 +83,6 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements Cons
           }))
       .compose(aVoid -> registerNode())
       .compose(aVoid -> discoverNodes())
-      .compose(aVoid -> initHaInfo())
       .setHandler(resultHandler);
   }
 
@@ -95,7 +90,6 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements Cons
    * Node leaving the cluster.
    */
   public void leave(Handler<AsyncResult<Void>> resultHandler) {
-    haInfoMap.clear();
     netServer.close();
     nodes.clear();
     destroySession(sessionId)
@@ -129,23 +123,27 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements Cons
   public void entryUpdated(EntryEvent event) {
     vertx.executeBlocking(workingThread -> {
       String receivedNodeId = actualKey(event.getEntry().getKey());
+      //if (receivedNodeId.equals(nodeId)) workingThread.complete();
       switch (event.getEventType()) {
         case WRITE: {
           boolean added = nodes.add(receivedNodeId);
-          if (added)
+          if (added) {
             log.trace("[" + nodeId + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
-          if (nodeListener != null) {
-            nodeListener.nodeAdded(receivedNodeId);
-            log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId);
+            if (nodeListener != null) {
+              nodeListener.nodeAdded(receivedNodeId);
+              log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId);
+            }
           }
           break;
         }
         case REMOVE: {
           boolean removed = nodes.remove(receivedNodeId);
-          if (removed) log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has left the cluster.");
-          if (nodeListener != null && removed) {
-            nodeListener.nodeLeft(receivedNodeId);
-            log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has been removed from nodeListener.");
+          if (removed) {
+            log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has left the cluster.");
+            if (nodeListener != null && removed) {
+              nodeListener.nodeLeft(receivedNodeId);
+              log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has been removed from nodeListener.");
+            }
           }
           break;
         }
@@ -160,47 +158,6 @@ public class ConsulNodeManager extends ConsulMap<String, String> implements Cons
     this.nodeListener = nodeListener;
     Watch<KeyValueList> watch = cM.createAndGetMapWatch(name);
     watch.setHandler(kvWatchHandler()).start();
-  }
-
-
-  /**
-   * @param <K> represents key type.
-   * @param <V> represents value type.
-   * @return pre-initialized cache that is later used to build consul sync map.
-   */
-  public <K, V> Map<K, V> getHaInfo() {
-    return haInfoMap;
-  }
-
-  /**
-   * Initializes haInfo map.
-   *
-   * @param <K> represents key type.
-   * @param <V> represents value type.
-   * @return completed future if haInfo is initialized successfully, failed future - otherwise.
-   */
-  private <K, V> Future<Void> initHaInfo() {
-    Future<Void> futureHaInfoCache = Future.future();
-    consulClient.getValues(HA_INFO_MAP, futureMap -> {
-      if (futureMap.succeeded()) {
-        List<KeyValue> keyValueList = getKeyValueListOrEmptyList(futureMap.result());
-        keyValueList.forEach(keyValue -> {
-          try {
-            ConsulEntry<K, V> entry = asConsulEntry(keyValue.getValue());
-            haInfoMap.put(entry.getKey(), entry.getValue());
-          } catch (Exception e) {
-            log.error("[" + nodeId + "]" + " - Failed to decode an entry of haInfo.", e);
-            futureHaInfoCache.fail(e);
-          }
-        });
-        log.trace("[" + nodeId + "] " + HA_INFO_MAP + " has been pre-built: " + Json.encodePrettily(haInfoMap));
-        futureHaInfoCache.complete();
-      } else {
-        log.error("[" + nodeId + "]" + " Failed to pre-build " + HA_INFO_MAP, futureMap.cause());
-        futureHaInfoCache.fail(futureMap.cause());
-      }
-    });
-    return futureHaInfoCache;
   }
 
   /**

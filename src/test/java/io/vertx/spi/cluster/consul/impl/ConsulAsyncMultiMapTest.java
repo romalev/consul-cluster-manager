@@ -47,10 +47,6 @@ public class ConsulAsyncMultiMapTest {
   private static AsyncMultiMap<String, ClusterNodeInfo> consulAsyncMultiMapNodeB;
   private static CacheManager cacheManager;
 
-  static {
-    System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
-  }
-
   @BeforeClass
   public static void setUp(TestContext context) {
     Async async = context.async();

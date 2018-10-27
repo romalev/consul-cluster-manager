@@ -93,7 +93,7 @@ public class ConsulClusterManager implements ClusterManager {
 
   @Override
   public <K, V> Map<K, V> getSyncMap(String name) {
-    return new ConsulSyncMap<>(name, nodeId, vertx, cC, cM, nM.getSessionId(), nM.getHaInfo());
+    return new ConsulSyncMap<>(name, nodeId, vertx, cC, nM.getSessionId());
   }
 
   @Override

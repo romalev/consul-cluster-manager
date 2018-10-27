@@ -1,6 +1,9 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
@@ -8,8 +11,6 @@ import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.*;
-
-import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureConsulEntry;
 
 /**
  * Distributed async map implementation based on consul key-value store.
@@ -81,7 +82,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     }).compose(v -> {
       Future<V> future = Future.future();
       if (v == null) future.complete();
-      else removeConsulValue(keyPath(k))
+      else deleteConsulValue(keyPath(k))
         .compose(removeSucceeded -> removeSucceeded ? cacheableRemove(k, v) : Future.failedFuture("Key + " + k + " wasn't removed."))
         .setHandler(future.completer());
       return future;
@@ -98,7 +99,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
       return future;
     }).compose(value -> {
       if (v.equals(value))
-        return removeConsulValue(keyPath(k))
+        return deleteConsulValue(keyPath(k))
           .compose(removeSucceeded -> removeSucceeded ? cacheableRemove(k) : Future.failedFuture("Key + " + k + " wasn't removed."));
       else return Future.succeededFuture(false);
     }).setHandler(resultHandler);
@@ -155,7 +156,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
   @Override
   public void clear(Handler<AsyncResult<Void>> resultHandler) {
-    delete().compose(aVoid -> {
+    deleteAll().compose(aVoid -> {
       cache.clear();
       return Future.<Void>succeededFuture();
     }).setHandler(resultHandler);
@@ -189,20 +190,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
    *
    * @return entries from consul kv store.
    */
-  private Future<Map<K, V>> entries() {
-    return consulEntries()
-      .compose(kvEntries -> {
-        List<Future> futureList = new ArrayList<>();
-        kvEntries.getList().forEach(kv -> futureList.add(asFutureConsulEntry(kv.getValue())));
-        return CompositeFuture.all(futureList).map(compositeFuture -> {
-          Map<K, V> map = new HashMap<>();
-          for (int i = 0; i < compositeFuture.size(); i++) {
-            ConsulEntry<K, V> consulEntry = compositeFuture.resultAt(i);
-            map.put(consulEntry.getKey(), consulEntry.getValue());
-          }
-          return map;
-        });
-      });
+  @Override
+  Future<Map<K, V>> entries() {
+    return super.entries();
   }
 
   /**

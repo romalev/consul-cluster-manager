@@ -99,18 +99,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return consul session id.
    */
   private String obtainSessionId(String checkId) {
-    CompletableFuture<String> futureSessionId = new CompletableFuture<>();
-    registerSession("Session for lock: " + lockName + " of: " + nodeId, checkId).setHandler(event -> {
-      if (event.succeeded()) futureSessionId.complete(event.result());
-      else futureSessionId.completeExceptionally(event.cause());
-    });
-    String sessionId;
-    try {
-      sessionId = futureSessionId.get(timeout, TimeUnit.MILLISECONDS);
-    } catch (InterruptedException | ExecutionException | TimeoutException e) {
-      throw new VertxException(e);
-    }
-    return sessionId;
+    return toSync(registerSession("Session for lock: " + lockName + " of: " + nodeId, checkId), timeout);
   }
 
   /**
