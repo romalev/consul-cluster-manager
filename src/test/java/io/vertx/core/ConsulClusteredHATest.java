@@ -12,11 +12,6 @@ import java.util.concurrent.CountDownLatch;
 
 public class ConsulClusteredHATest extends HATest {
 
-  @Override
-  protected ClusterManager getClusterManager() {
-    return new ConsulClusterManager(new ConsulClientOptions());
-  }
-
   @Test
   public void testHaGroups() throws Exception {
     vertx1 = startVertx("group1", 1);
@@ -36,29 +31,36 @@ public class ConsulClusteredHATest extends HATest {
     });
     awaitLatch(latch1);
     CountDownLatch latch2 = new CountDownLatch(1);
-    ((VertxInternal) vertx1).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
+    ((VertxInternal)vertx1).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
       fail("Should not failover here 1");
     });
-    ((VertxInternal) vertx2).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
+    ((VertxInternal)vertx2).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
       fail("Should not failover here 2");
     });
-    ((VertxInternal) vertx4).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
+    ((VertxInternal)vertx4).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
       assertTrue(succeeded);
       latch2.countDown();
     });
-    ((VertxInternal) vertx3).simulateKill();
+    ((VertxInternal)vertx3).simulateKill();
+    // fail here
     awaitLatch(latch2);
     assertTrue(vertx4.deploymentIDs().size() == 1);
     CountDownLatch latch3 = new CountDownLatch(1);
-    ((VertxInternal) vertx2).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
+    ((VertxInternal)vertx2).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
       assertTrue(succeeded);
       latch3.countDown();
     });
-    ((VertxInternal) vertx4).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
+    ((VertxInternal)vertx4).failoverCompleteHandler((nodeID, haInfo, succeeded) -> {
       fail("Should not failover here 4");
     });
-    ((VertxInternal) vertx1).simulateKill();
+    ((VertxInternal)vertx1).simulateKill();
     awaitLatch(latch3);
     assertTrue(vertx2.deploymentIDs().size() == 1);
   }
+
+  @Override
+  protected ClusterManager getClusterManager() {
+    return new ConsulClusterManager(new ConsulClientOptions());
+  }
+
 }

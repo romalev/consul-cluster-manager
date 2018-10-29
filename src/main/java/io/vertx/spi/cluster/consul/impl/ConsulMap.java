@@ -209,7 +209,7 @@ abstract class ConsulMap<K, V> {
     Future<String> future = Future.future();
     SessionOptions sessionOptions = new SessionOptions()
       .setBehavior(SessionBehavior.DELETE)
-      .setLockDelay(0) // can't specify 0 - perhaps bug in consul client implementation.
+      .setLockDelay(0)
       .setName(sessionName)
       .setChecks(Arrays.asList(checkId, "serfHealth"));
 
@@ -290,11 +290,11 @@ abstract class ConsulMap<K, V> {
 
 
   /**
-   * Obtains a result from future by and waiting for it's completion.
+   * Obtains a result from {@link Future} by and waiting for it's completion.
    * Note: should never be called from event loop context!
    *
    * @param future  - future holding result of future computation.
-   * @param timeout - the maximum time to wait.
+   * @param timeout - the maximum time to wait in ms.
    * @param <T>     - result type.
    * @return computation result.
    */
