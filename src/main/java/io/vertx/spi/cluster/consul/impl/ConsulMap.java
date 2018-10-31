@@ -308,7 +308,6 @@ abstract class ConsulMap<K, V> {
     try {
       result = completableFuture.get(timeout, TimeUnit.MILLISECONDS);
     } catch (InterruptedException | ExecutionException | TimeoutException e) {
-      log.error("Exception has occurred: " + e);
       throw new VertxException(e);
     }
     return result;

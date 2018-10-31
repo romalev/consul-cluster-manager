@@ -10,44 +10,50 @@ import io.vertx.ext.consul.KeyValueOptions;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import static io.vertx.core.Future.succeededFuture;
+import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry;
 
 /**
  * Distributed sync map implementation based on consul key-value store.
- * Essentially it holds HA INFO about cluster node's vertices which means map's entries are (AND ALWAYS MUST BE) EPHEMERAL.
+ * It is ONLY used by {@link io.vertx.core.impl.HAManager} - essentially it holds HA INFO about cluster node's vertices
  *
  * @author Roman Levytskyi
  */
-public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
+public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V>, ConsulKvListener {
 
   private final static Logger log = LoggerFactory.getLogger(ConsulSyncMap.class);
 
+  private final Map<K, V> cache = new ConcurrentHashMap<>();
   private final KeyValueOptions kvOptions;
-  private long timeout = 1500;
+  private long timeout = 10000;
 
-  public ConsulSyncMap(String name, String nodeId, Vertx vx, ConsulClient cC, String sessionId) {
+  public ConsulSyncMap(String name, String nodeId, Vertx vx, ConsulClient cC, String sessionId, CacheManager cM) {
     super(name, nodeId, vx, cC);
     // sync map's node mode should be EPHEMERAL, as lifecycle of its entries as long as verticle's.
     this.kvOptions = new KeyValueOptions().setAcquireSession(sessionId);
+    listen(cM.createAndGetMapWatch(name));
   }
 
   @Override
   public int size() {
-    return toSync(consulKeys().compose(list -> Future.succeededFuture(list.size())), timeout);
+    return toSync(consulKeys().compose(list -> succeededFuture(list.size())), timeout);
   }
 
   @Override
   public boolean isEmpty() {
-    return toSync(consulKeys().compose(list -> Future.succeededFuture(list.isEmpty())), timeout);
+    return toSync(consulKeys().compose(list -> succeededFuture(list.isEmpty())), timeout);
   }
 
   @Override
   public boolean containsKey(Object key) {
-    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.keySet().contains(key))), timeout);
+    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.keySet().contains(key))), timeout);
   }
 
   @Override
   public boolean containsValue(Object value) {
-    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.values().contains(value))), timeout);
+    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.values().contains(value))), timeout);
   }
 
   @Override
@@ -58,7 +64,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   @Override
   public V put(K key, V value) {
     return toSync(putValue(key, value, kvOptions).compose(aBoolean -> {
-      if (aBoolean) return Future.succeededFuture(value);
+      if (aBoolean) return succeededFuture(value);
       else return Future.failedFuture("[" + nodeId + "]" + " failed to put KV: " + key + " -> " + value);
     }), timeout);
   }
@@ -66,10 +72,11 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   @Override
   public V remove(Object key) {
     return toSync(getValue((K) key).compose(v -> {
-      if (v == null) return Future.succeededFuture();
-      else {
+      if (v == null) {
+        return succeededFuture();
+      } else {
         return delete((K) key).compose(aBoolean -> {
-          if (aBoolean) return Future.succeededFuture(v);
+          if (aBoolean) return succeededFuture(v);
           else return Future.failedFuture("[" + nodeId + "]" + " failed to remove an entry by K: " + key);
         });
       }
@@ -88,16 +95,39 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public Set<K> keySet() {
-    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.keySet())), timeout);
+    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.keySet())), timeout);
   }
 
   @Override
   public Collection<V> values() {
-    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.values())), timeout);
+    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.values())), timeout);
   }
 
   @Override
   public Set<Entry<K, V>> entrySet() {
-    return toSync(entries().compose(kvMap -> Future.succeededFuture(kvMap.entrySet())), timeout);
+    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.entrySet())), timeout);
+  }
+
+  @Override
+  public void entryUpdated(EntryEvent event) {
+    ConsulEntry<K, V> entry;
+    try {
+      entry = asConsulEntry(event.getEntry().getValue());
+    } catch (Exception e) {
+      log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
+      return;
+    }
+    switch (event.getEventType()) {
+      case WRITE:
+        cache.put(entry.getKey(), entry.getValue());
+        break;
+      case REMOVE:
+        // TODO: check is HA enabled
+        // defer removing from cache - this is for HA to work correctly.
+        vertx.setTimer(10000, handler -> cache.remove(entry.getKey()));
+        break;
+      default:
+        break;
+    }
   }
 }

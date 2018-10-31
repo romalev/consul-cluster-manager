@@ -16,6 +16,7 @@ import java.util.*;
  * Distributed async map implementation based on consul key-value store.
  * <p>
  * Note: given map is used in vertx shared data - it is used by vertx nodes to share the data, entries of this map are always PERSISTENT not EPHEMERAL.
+ * // TODO : cache has to be unplagged.
  *
  * @author Roman Levytskyi
  */

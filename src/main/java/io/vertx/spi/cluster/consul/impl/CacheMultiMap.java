@@ -15,7 +15,12 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asConsulEntry;
 
 /**
  * Implementation of local IN-MEMORY multimap cache which is essentially concurrent hash map under the hood.
- * Works in the same way as {@link CacheMap}.
+ * Now:
+ * Cache read operations happen synchronously by simply reading from {@link java.util.concurrent.ConcurrentHashMap}.
+ * Cache WRITE operations happen either:
+ * - through consul watch that monitors the consul kv store for updates (see https://www.consul.io/docs/agent/watches.html).
+ * - when consul agent acknowledges the success of write operation from local vertx node (local node's data gets immediately cached without even waiting for a watch to take place.)
+ * Note: local cache updates still might kick in through consul watch in case update succeeded in consul agent but wasn't yet acknowledged back to node. Eventually last write wins.
  *
  * @author Roman Levytskyi
  */

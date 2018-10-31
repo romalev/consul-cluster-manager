@@ -11,10 +11,7 @@ import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.KeyValueOptions;
 import io.vertx.ext.consul.Watch;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -63,7 +60,7 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
    */
   public Future<Void> add(JsonObject details) {
     Future<Void> future = Future.future();
-    putValue(nodeId, details.encode(), new KeyValueOptions().setAcquireSession(sessionId)).setHandler(asyncResult -> {
+    putConsulValue(keyPath(nodeId), details.encode(), new KeyValueOptions().setAcquireSession(sessionId)).setHandler(asyncResult -> {
       if (asyncResult.failed()) {
         log.error("[" + nodeId + "]" + " - Failed to put node: " + " to: " + name, asyncResult.cause());
         future.fail(asyncResult.cause());
@@ -74,6 +71,10 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
 
   public List<String> get() {
     return new ArrayList<>(nodes);
+  }
+
+  public void clear() {
+    nodes.clear();
   }
 
   public void nodeListener(NodeListener nodeListener) {

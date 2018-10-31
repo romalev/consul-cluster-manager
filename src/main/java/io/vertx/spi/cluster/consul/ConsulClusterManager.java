@@ -19,9 +19,9 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
+import static io.vertx.core.Future.succeededFuture;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
@@ -34,6 +34,8 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * <p>
  * - TTL value (on entries) must be between 10s and 86400s currently. [Invalidation-time is twice the TTL time](https://github.com/hashicorp/consul/issues/1172)
  * this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl.
+ * <p>
+ * TODO : do we really need to keep the service registered.
  *
  * @author Roman Levytskyi
  */
@@ -52,7 +54,8 @@ public class ConsulClusterManager implements ClusterManager {
   private ConsulClient cC;
   private CacheManager cM;
   private String checkId; // tcp consul check id
-  private String sessionId; // consul session id used to make map entries ephemeral.
+  private String ephemeralSessionId; // consul session id used to make map entries ephemeral.
+  private String releaseSessionId;
   private JsonObject nodeTcpAddress = new JsonObject();
   private NetServer netServer; // dummy TCP server to receive and acknowledge heart beats messages from consul.
 
@@ -87,7 +90,7 @@ public class ConsulClusterManager implements ClusterManager {
   @Override
   public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
     Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cM, sessionId, nodeId));
+    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cM, ephemeralSessionId, nodeId));
     futureMultiMap.complete(asyncMultiMap);
     futureMultiMap.setHandler(asyncResultHandler);
   }
@@ -102,7 +105,7 @@ public class ConsulClusterManager implements ClusterManager {
 
   @Override
   public <K, V> Map<K, V> getSyncMap(String name) {
-    return new ConsulSyncMap<>(name, nodeId, vertx, cC, sessionId);
+    return new ConsulSyncMap<>(name, nodeId, vertx, cC, releaseSessionId, cM);
   }
 
   @Override
@@ -115,7 +118,7 @@ public class ConsulClusterManager implements ClusterManager {
         long start = System.nanoTime();
         try {
           lockObtained = lock.tryObtain();
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+        } catch (VertxException e) {
           // OK continue
         }
         remaining = remaining - MILLISECONDS.convert(System.nanoTime() - start, NANOSECONDS);
@@ -162,7 +165,7 @@ public class ConsulClusterManager implements ClusterManager {
       try {
         cC = ConsulClient.create(vertx, cClOptns);
         cM = new CacheManager(vertx, cClOptns);
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, sessionId, cM);
+        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, ephemeralSessionId, cM);
       } catch (final Exception e) {
         future.fail(e);
       }
@@ -224,11 +227,21 @@ public class ConsulClusterManager implements ClusterManager {
       .compose(aVoid -> registerService())
       .compose(aVoid -> registerTcpCheck())
       .compose(aVoid ->
-        registerSession("Session for ephemeral keys of: " + nodeId)
+        registerSession("Session for ephemeral keys for: " + nodeId, SessionBehavior.DELETE)
           .compose(s -> {
-            sessionId = s;
-            return Future.succeededFuture();
+            ephemeralSessionId = s;
+            return succeededFuture();
           }))
+      .compose(aVoid ->
+        registerSession("Release session for: " + nodeId, SessionBehavior.RELEASE)
+          .compose(s -> {
+            releaseSessionId = s;
+            return succeededFuture();
+          }))
+      .compose(aVoid -> {
+        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, ephemeralSessionId, cM);
+        return succeededFuture();
+      })
       .compose(aVoid -> nodeSet.add(nodeTcpAddress))
       .compose(aVoid -> nodeSet.discover());
   }
@@ -238,8 +251,9 @@ public class ConsulClusterManager implements ClusterManager {
    */
   private Future<Void> doLeave() {
     netServer.close();
-    // TODO: DO we need to clear nodeSet ???
-    return destroySession(sessionId)
+    nodeSet.clear();
+    return destroySession(ephemeralSessionId)
+      .compose(aVoid -> destroySession(releaseSessionId))
       .compose(aVoid -> deregisterNode())
       .compose(aVoid -> deregisterTcpCheck());
   }
@@ -318,10 +332,10 @@ public class ConsulClusterManager implements ClusterManager {
    * @param sessionName - session name.
    * @return session id.
    */
-  private Future<String> registerSession(String sessionName) {
+  private Future<String> registerSession(String sessionName, SessionBehavior sessionBehavior) {
     Future<String> future = Future.future();
     SessionOptions sessionOptions = new SessionOptions()
-      .setBehavior(SessionBehavior.DELETE)
+      .setBehavior(sessionBehavior)
       .setLockDelay(0)
       .setName(sessionName)
       .setChecks(Arrays.asList(checkId, "serfHealth"));
@@ -387,4 +401,28 @@ public class ConsulClusterManager implements ClusterManager {
   }
 
   // TODO : DEFINE ConsulSessionManager to remove duplicate code
+  private class ConsulSessionManager {
+    public void close() {
+
+    }
+  }
+
+  /**
+   * Consul {@link Watch} manager. Contains a queue to store all watches that are being created
+   * when a node leaves the cluster - all its appropriate watches have to be stopped.
+   */
+  // TODO: STILL TO BE DONE
+  private class ConsulWatchManager {
+    private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
+
+    public Watch<KeyValueList> createAndGetMapWatch(String mapName) {
+      Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
+      watches.add(kvWatch);
+      return kvWatch;
+    }
+
+    public void close() {
+      watches.forEach(Watch::stop);
+    }
+  }
 }

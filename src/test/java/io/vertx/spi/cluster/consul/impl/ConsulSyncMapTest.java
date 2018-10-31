@@ -35,7 +35,7 @@ public class ConsulSyncMapTest {
     String k = "myKey";
     String v = "myValue";
 
-    ConsulSyncMap<String, String> syncMap = new ConsulSyncMap<>("syncMapTest", "testSyncMapNodeId", vertx, consulClient, sessionId);
+    ConsulSyncMap<String, String> syncMap = new ConsulSyncMap<>("syncMapTest", "testSyncMapNodeId", vertx, consulClient, sessionId, null);
 
     syncMap.put(k, v);
     assertFalse(syncMap.isEmpty());

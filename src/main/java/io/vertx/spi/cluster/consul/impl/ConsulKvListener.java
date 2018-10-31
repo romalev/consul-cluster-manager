@@ -3,6 +3,7 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.Handler;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
+import io.vertx.ext.consul.Watch;
 import io.vertx.ext.consul.WatchResult;
 import io.vertx.spi.cluster.consul.impl.ConsulKvListener.EntryEvent.EventType;
 
@@ -24,6 +25,10 @@ public interface ConsulKvListener {
    * @param event - holds the event's data.
    */
   void entryUpdated(EntryEvent event);
+
+  default void listen(Watch<KeyValueList> watch) {
+    if (watch != null) watch.setHandler(kvWatchHandler()).start();
+  }
 
   /**
    * Transforms incoming {@link io.vertx.ext.consul.KeyValueList} into internal {@link EntryEvent}
