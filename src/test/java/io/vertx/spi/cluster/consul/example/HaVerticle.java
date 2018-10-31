@@ -8,11 +8,6 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 
 import java.lang.management.ManagementFactory;
 
-/**
- * Created by b3605 on 02/03/16.
- *
- * @author Xavier MARIN (b3605)
- */
 public class HaVerticle extends AbstractVerticle {
   /**
    * The entry point of application.

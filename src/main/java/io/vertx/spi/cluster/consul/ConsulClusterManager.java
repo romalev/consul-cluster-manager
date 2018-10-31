@@ -19,7 +19,6 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static io.vertx.core.Future.succeededFuture;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -42,20 +41,20 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 public class ConsulClusterManager implements ClusterManager {
 
   private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
+  private static final String HA_INFO = "__vertx.haInfo";
   private static final String TCP_CHECK_INTERVAL = "10s";
   private final String nodeId;
   private final ConsulClientOptions cClOptns;
   private final Map<String, Lock> locks = new ConcurrentHashMap<>();
   private final Map<String, Counter> counters = new ConcurrentHashMap<>();
+  private final Map<String, Map<?, ?>> syncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMap<?, ?>> asyncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
   private ConsulClusterNodeSet nodeSet;
   private Vertx vertx;
   private ConsulClient cC;
-  private CacheManager cM;
   private String checkId; // tcp consul check id
   private String ephemeralSessionId; // consul session id used to make map entries ephemeral.
-  private String releaseSessionId;
   private JsonObject nodeTcpAddress = new JsonObject();
   private NetServer netServer; // dummy TCP server to receive and acknowledge heart beats messages from consul.
 
@@ -79,33 +78,25 @@ public class ConsulClusterManager implements ClusterManager {
     this.vertx = vertx;
   }
 
-  /**
-   * Every eventbus handler has an ID. SubsMap (subscriber map) is a MultiMap which
-   * maps handler-IDs with server-IDs and thus allows the eventbus to determine where
-   * to send messages.
-   *
-   * @param name A unique name by which the the MultiMap can be identified within the cluster.
-   * @return subscription map
-   */
   @Override
   public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
-    Future<AsyncMultiMap<K, V>> futureMultiMap = Future.future();
-    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cM, ephemeralSessionId, nodeId));
-    futureMultiMap.complete(asyncMultiMap);
-    futureMultiMap.setHandler(asyncResultHandler);
+    Future<AsyncMultiMap<K, V>> futureAsyncMultiMap = Future.future();
+    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, ephemeralSessionId, nodeId));
+    futureAsyncMultiMap.complete(asyncMultiMap);
+    futureAsyncMultiMap.setHandler(asyncResultHandler);
   }
 
   @Override
   public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
-    Future<AsyncMap<K, V>> futureMap = Future.future();
-    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, nodeId, vertx, cC, cM));
-    futureMap.complete(asyncMap);
-    futureMap.setHandler(asyncResultHandler);
+    Future<AsyncMap<K, V>> futureAsyncMap = Future.future();
+    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, nodeId, vertx, cC));
+    futureAsyncMap.complete(asyncMap);
+    futureAsyncMap.setHandler(asyncResultHandler);
   }
 
   @Override
   public <K, V> Map<K, V> getSyncMap(String name) {
-    return new ConsulSyncMap<>(name, nodeId, vertx, cC, releaseSessionId, cM);
+    return (Map<K, V>) syncMaps.computeIfAbsent(name, key -> new ConsulSyncMap<>(name, nodeId, vertx, cC));
   }
 
   @Override
@@ -164,8 +155,7 @@ public class ConsulClusterManager implements ClusterManager {
       active = true;
       try {
         cC = ConsulClient.create(vertx, cClOptns);
-        cM = new CacheManager(vertx, cClOptns);
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, ephemeralSessionId, cM);
+        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
       } catch (final Exception e) {
         future.fail(e);
       }
@@ -186,7 +176,6 @@ public class ConsulClusterManager implements ClusterManager {
       active = false;
       // forcibly release all lock being held by node.
       locks.values().forEach(Lock::release);
-      cM.close();
       doLeave().setHandler(resultFuture.completer());
     } else {
       log.warn(nodeId + "' is NOT active.");
@@ -232,15 +221,14 @@ public class ConsulClusterManager implements ClusterManager {
             ephemeralSessionId = s;
             return succeededFuture();
           }))
-      .compose(aVoid ->
-        registerSession("Release session for: " + nodeId, SessionBehavior.RELEASE)
-          .compose(s -> {
-            releaseSessionId = s;
-            return succeededFuture();
-          }))
       .compose(aVoid -> {
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, ephemeralSessionId, cM);
+        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
         return succeededFuture();
+      })
+      .compose(aVoid -> {
+        Future<Void> future = Future.future();
+        ((ConsulSyncMap) getSyncMap(HA_INFO)).clear(future.completer());
+        return future;
       })
       .compose(aVoid -> nodeSet.add(nodeTcpAddress))
       .compose(aVoid -> nodeSet.discover());
@@ -251,9 +239,12 @@ public class ConsulClusterManager implements ClusterManager {
    */
   private Future<Void> doLeave() {
     netServer.close();
-    nodeSet.clear();
+    // stop watches and clear caches.
+    nodeSet.close(handler -> {
+    });
+    asyncMultiMaps.values().forEach(map -> ((Closeable) map).close(handler -> {
+    }));
     return destroySession(ephemeralSessionId)
-      .compose(aVoid -> destroySession(releaseSessionId))
       .compose(aVoid -> deregisterNode())
       .compose(aVoid -> deregisterTcpCheck());
   }
@@ -404,25 +395,6 @@ public class ConsulClusterManager implements ClusterManager {
   private class ConsulSessionManager {
     public void close() {
 
-    }
-  }
-
-  /**
-   * Consul {@link Watch} manager. Contains a queue to store all watches that are being created
-   * when a node leaves the cluster - all its appropriate watches have to be stopped.
-   */
-  // TODO: STILL TO BE DONE
-  private class ConsulWatchManager {
-    private final Queue<Watch> watches = new ConcurrentLinkedQueue<>();
-
-    public Watch<KeyValueList> createAndGetMapWatch(String mapName) {
-      Watch<KeyValueList> kvWatch = Watch.keyPrefix(mapName, vertx, cClOptns);
-      watches.add(kvWatch);
-      return kvWatch;
-    }
-
-    public void close() {
-      watches.forEach(Watch::stop);
     }
   }
 }

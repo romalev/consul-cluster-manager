@@ -40,7 +40,6 @@ public class ConsulAsyncMapTest {
   private static ConsulClient consulClient;
   private static ConsulClientOptions cCOps;
   private static AsyncMap<String, String> consulAsyncMap;
-  private static CacheManager cacheManager;
 
   @BeforeClass
   public static void setUp(TestContext context) {
@@ -54,8 +53,7 @@ public class ConsulAsyncMapTest {
         cCOps = new ConsulClientOptions();
       }
       consulClient = ConsulClient.create(rule.vertx(), cCOps);
-      cacheManager = new CacheManager(rule.vertx(), cCOps);
-      consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, "Roman", Vertx.vertx(), consulClient, cacheManager);
+      consulAsyncMap = new ConsulAsyncMap<>(MAP_NAME, "Roman", Vertx.vertx(), consulClient);
       workerThread.complete();
     }, res -> {
       if (res.succeeded()) {
@@ -68,7 +66,6 @@ public class ConsulAsyncMapTest {
 
   @AfterClass
   public static void tearDown(TestContext context) {
-    cacheManager.close();
     rule.vertx().close(context.asyncAssertSuccess());
     if (isEmbeddedConsulAgentEnabled) consulAgent.stop();
   }

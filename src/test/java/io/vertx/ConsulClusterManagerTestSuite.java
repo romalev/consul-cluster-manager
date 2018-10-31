@@ -12,7 +12,7 @@ import org.junit.runners.Suite;
  * Central test suite.
  * <p>
  * To enable slf4 logging specify this as VM options:
- * -ea -Dvertx.logger-delegate-factory-class-name=io.vertx.core.logging.SLF4JLogDelegateFactory
+ *
  *
  * @author Roman Levytskyi
  */

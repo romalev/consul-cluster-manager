@@ -1,17 +1,19 @@
 package io.vertx.spi.cluster.consul.impl;
 
+import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.NodeListener;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.KeyValueOptions;
-import io.vertx.ext.consul.Watch;
+import io.vertx.ext.consul.*;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -27,16 +29,19 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
 
   private final static Logger log = LoggerFactory.getLogger(ConsulClusterNodeSet.class);
 
+  private final static String NAME = "__vertx.nodes";
+
   // local cache of all vertx cluster nodes.
   private Set<String> nodes = new HashSet<>();
+  private Watch<KeyValueList> watch;
   private final String sessionId;
   private NodeListener nodeListener;
-  private CacheManager cM;
 
-  public ConsulClusterNodeSet(String nodeId, Vertx vertx, ConsulClient consulClient, String sessionId, CacheManager cM) {
-    super("__vertx.nodes", nodeId, vertx, consulClient);
+
+  public ConsulClusterNodeSet(String nodeId, Vertx vertx, ConsulClient consulClient, ConsulClientOptions options, String sessionId) {
+    super(NAME, nodeId, vertx, consulClient);
     this.sessionId = sessionId;
-    this.cM = cM;
+    watch = Watch.keyPrefix(NAME, vertx, options);
   }
 
   /**
@@ -73,14 +78,9 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
     return new ArrayList<>(nodes);
   }
 
-  public void clear() {
-    nodes.clear();
-  }
-
   public void nodeListener(NodeListener nodeListener) {
     this.nodeListener = nodeListener;
-    Watch<KeyValueList> watch = cM.createAndGetMapWatch(name);
-    watch.setHandler(kvWatchHandler()).start();
+    listen(watch);
   }
 
   @Override
@@ -115,4 +115,12 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
     }, result -> {
     });
   }
+
+  @Override
+  public void close(Handler<AsyncResult<Void>> completionHandler) {
+    nodes.clear();
+    watch.stop();
+    Future.<Void>succeededFuture().setHandler(completionHandler);
+  }
+
 }
