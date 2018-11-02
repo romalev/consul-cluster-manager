@@ -2,15 +2,16 @@ package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.*;
 import io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo;
+import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ChoosableIterable;
-import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.KeyValue;
-import io.vertx.ext.consul.KeyValueOptions;
+import io.vertx.ext.consul.*;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -37,18 +38,31 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureString;
  *
  * @author Roman Levytskyi
  */
-public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V> {
+public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V>, ConsulKvListener {
 
   private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
+  private final ConsulClientOptions cCOptions;
   private final KeyValueOptions kvOpts;
-  private CacheMultiMap<K, V> cache;
+  /*
+   * Implementation of local IN-MEMORY multimap cache which is essentially concurrent hash map under the hood.
+   * Now:
+   * Cache read operations happen synchronously by simply reading from {@link java.util.concurrent.ConcurrentHashMap}.
+   * Cache WRITE operations happen either:
+   * - through consul watch that monitors the consul kv store for updates (see https://www.consul.io/docs/agent/watches.html).
+   * - when consul agent acknowledges the success of write operation from local vertx node (local node's data gets immediately cached without even waiting for a watch to take place.)
+   * Note: local cache updates still might kick in through consul watch in case update succeeded in consul agent but wasn't yet acknowledged back to node. Eventually last write wins.
+   */
+  private ConcurrentMap<K, ChoosableSet<V>> cache = new ConcurrentHashMap<>();
+  private Watch<KeyValueList> watch;
 
-  public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient cC, CacheManager cM, String sessionId, String nodeId) {
+  public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient cC, ConsulClientOptions options, String sessionId, String nodeId) {
     super(name, nodeId, vertx, cC);
+    this.cCOptions = options;
     // options to make entries of this map ephemeral.
     this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
-    cache = cM.createAndGetCacheMultiMap(name, nodeId);
+    watch = Watch.keyPrefix(name, vertx, cCOptions);
+    listen(watch);
     // TODO: remove it.
     vertx.setPeriodic(15000, event -> log.trace("[" + nodeId + "]" + " CacheMultiMap is : " + cache));
   }
@@ -64,6 +78,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   @Override
   public void get(K k, Handler<AsyncResult<ChoosableIterable<V>>> asyncResultHandler) {
         /*
+        TODO:
         Keeping subs cache in sync with what's stored in consul KV store is a little tricky.
         As entries are added or removed the ConsulKvListener will be called but when the node joins the cluster
         - it isn't provided the initial state via the ConsulKvListener therefore -> the first time map get is called for
@@ -110,13 +125,12 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       }).setHandler(completionHandler);
   }
 
-
   private Future<Void> cacheablePut(K k, Set<V> subs, V sub) {
     Set<V> newOne = new HashSet<>(subs);
     newOne.add(sub);
     return put(k, newOne)
       .compose(aBoolean -> {
-        cache.put(k, sub);
+        putInCache(k, sub);
         return Future.succeededFuture();
       });
 
@@ -132,7 +146,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       getSubsByEbAddress(key.toString()).setHandler(subsEvent -> {
         // immediately update the internal cache.
         ChoosableIterable<V> choosableIterable = toChoosable(subsEvent.result());
-        cache.putAllForKey(key, (ChoosableSet<V>) choosableIterable);
+        putAllInCacheForKey(key, (ChoosableSet<V>) choosableIterable);
         future.complete(choosableIterable);
       });
     }
@@ -151,7 +165,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
           Set<V> subs = new HashSet<>(vs);
           subs.remove(value);
           if (subs.isEmpty()) {
-            return removeConsulValue(keyPath)
+            return deleteConsulValue(keyPath)
               .compose(removeSucceeded -> {
                 // immediately update the internal cache.
                 cache.remove(key, value);
@@ -164,7 +178,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         });
     } else {
       String keyPath = addressKeyPath(key.toString());
-      return removeConsulValues(keyPath).compose(event -> {
+      return deleteConsulValues(keyPath).compose(event -> {
         // immediately update the internal cache.
         cache.remove(key, value);
         return Future.succeededFuture(true);
@@ -208,7 +222,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
             future.fail(e);
           }
         });
-        log.trace("[" + nodeId + "]" + " - fetched : + " + resultSet + " by address: " + consulKey);
+        log.trace("[" + nodeId + "]" + " - fetched : " + resultSet + " by address: " + consulKey);
         future.complete(resultSet);
       }
     });
@@ -259,4 +273,69 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   private Optional<String> getClusterNodeId(V val) {
     return val.getClass() == ClusterNodeInfo.class ? Optional.of(((ClusterNodeInfo) val).nodeId) : Optional.empty();
   }
+
+
+  /**
+   * Puts an entry to internal cache.
+   */
+  private synchronized void putInCache(K key, V value) {
+    ChoosableSet<V> choosableSet = cache.get(key);
+    if (choosableSet == null) choosableSet = new ChoosableSet<>(1);
+    choosableSet.add(value);
+    cache.put(key, choosableSet);
+    log.trace("[" + nodeId + "]" + " Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
+  }
+
+  /**
+   * Removes an entry from internal cache.
+   */
+  private synchronized void removeFromCache(K key, V value) {
+    ChoosableSet<V> choosableSet = cache.get(key);
+    if (choosableSet == null) return;
+    choosableSet.remove(value);
+    if (choosableSet.isEmpty()) cache.remove(key);
+    else cache.put(key, choosableSet);
+    log.trace("[" + nodeId + "]" + " Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
+  }
+
+  private synchronized void putAllInCacheForKey(K key, ChoosableSet<V> values) {
+    cache.put(key, values);
+  }
+
+
+  @Override
+  public void entryUpdated(EntryEvent event) {
+    log.trace("[" + nodeId + "]" + " Entry: " + event.getEntry().getKey() + " is " + event.getEventType());
+    ConsulEntry<K, Set<V>> entry;
+    try {
+      entry = asConsulEntry(event.getEntry().getValue());
+    } catch (Exception e) {
+      log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
+      return;
+    }
+    switch (event.getEventType()) {
+      case WRITE:
+        entry.getValue().forEach(v -> putInCache(entry.getKey(), v));
+        break;
+      case REMOVE:
+        entry.getValue().forEach(v -> removeFromCache(entry.getKey(), v));
+        break;
+      default:
+        break;
+    }
+  }
+
+  @Override
+  public String toString() {
+    return Json.encodePrettily(cache);
+  }
+
+
+  @Override
+  public void close(Handler<AsyncResult<Void>> completionHandler) {
+    cache.clear();
+    watch.stop();
+    Future.<Void>succeededFuture().setHandler(completionHandler);
+  }
+
 }

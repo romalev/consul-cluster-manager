@@ -34,29 +34,6 @@ public class ConsulClusteredAsyncMapTest extends ClusteredAsyncMapTest {
     return new ConsulClusterManager(new ConsulClientOptions());
   }
 
-  @Test
-  public void testClear() {
-    getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map -> {
-      map.put("foo", "bar", onSuccess(v -> {
-        getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map2 -> {
-          map2.clear(onSuccess(v2 -> {
-            // Introducing sleep time for 500ms - this should be enough for vertx's watch to
-            // receive the remove event for key "foo", otherwise this test might fail.
-            // If we want to keep original test then cache most likely has to be unplugged from async map
-            // - this is to be discussed with reviewers.
-            sleep(500);
-            //
-            map.get("foo", onSuccess(res -> {
-              assertNull(res);
-              testComplete();
-            }));
-          }));
-        }));
-      }));
-    }));
-    await();
-  }
-
   /**
    * Consul restriction: TTL value (on entries) must be between 10s and 86400s currently. [Invalidation-time is twice the TTL time](https://github.com/hashicorp/consul/issues/1172)
    * this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl.

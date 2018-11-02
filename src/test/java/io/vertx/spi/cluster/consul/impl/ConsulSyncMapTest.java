@@ -1,137 +1,102 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.ext.consul.ConsulClient;
-import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.ext.unit.Async;
-import io.vertx.ext.unit.TestContext;
-import io.vertx.ext.unit.junit.RunTestOnContext;
-import io.vertx.ext.unit.junit.VertxUnitRunner;
-import io.vertx.spi.cluster.consul.ConsulAgent;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
+import io.vertx.ext.consul.SessionBehavior;
+import io.vertx.ext.consul.SessionOptions;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
+
+import static org.junit.Assert.*;
 
 /**
- * Test is written in fully async manner.
+ * Test for {@link ConsulSyncMap}
  *
  * @author Roman Levytskyi
  */
-@RunWith(VertxUnitRunner.class)
 public class ConsulSyncMapTest {
 
-  private static final String MAP_NAME = "vertx-test.haInfo";
-  private static final boolean isEmbeddedConsulAgentEnabled = false;
-  @ClassRule
-  public static RunTestOnContext rule = new RunTestOnContext();
-  private static ConsulAgent consulAgent;
-  private static ConsulClient consulClient;
-  private static ConsulClientOptions cCOps;
-  private static ConsulSyncMap<String, String> consulSyncMap;
-  private static CacheManager cacheManager;
+  private Vertx vertx;
+  private ConsulClient consulClient;
+  private String sessionId;
 
-  static {
-    System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
-  }
-
-  @BeforeClass
-  public static void setUp(TestContext context) {
-    Async async = context.async();
-    rule.vertx().executeBlocking(event -> {
-      consulAgent = new ConsulAgent();
-      consulAgent.start();
-      cCOps = new ConsulClientOptions().setPort(consulAgent.getPort());
-      consulClient = ConsulClient.create(rule.vertx(), cCOps);
-      cacheManager = new CacheManager(rule.vertx(), cCOps);
-      event.complete();
-    }, res ->
-      createConsulSessionId()
-        .compose(s -> {
-          consulSyncMap = new ConsulSyncMap<>(MAP_NAME, "Roman", rule.vertx(), consulClient, cacheManager, s, new ConcurrentHashMap<>());
-          return Future.succeededFuture();
-        })
-        .setHandler(event -> {
-          if (event.succeeded()) {
-            async.complete();
-          } else {
-            context.fail(event.cause());
-          }
-        }));
-  }
-
-  @AfterClass
-  public static void tearDown(TestContext context) {
-    cacheManager.close();
-    rule.vertx().close(context.asyncAssertSuccess());
-    consulAgent.stop();
-  }
-
-  private static Future<String> createConsulSessionId() {
-    Future<String> future = Future.future();
-    consulClient.createSession(future.completer());
-    return future;
+  @Before
+  public void setUp() {
+    vertx = Vertx.vertx();
+    consulClient = ConsulClient.create(vertx);
+    sessionId = getSessionId();
   }
 
   @Test
-  public void verify_add(TestContext context) {
-    Async async = context.async();
-    // given
-    String key = "keyA";
-    String value = "localhost:keyA";
-    // when
-    rule.vertx().executeBlocking(event -> {
-      consulSyncMap.put(key, value);
-      sleep(1000L, context);
-      event.complete();
-    }, res ->
-      consulClient.getValue(MAP_NAME + "/" + key, event -> {
-        if (event.succeeded()) {
-          try {
-            ConsulEntry o = ConversationUtils.asConsulEntry(event.result().getValue());
-            context.assertEquals(value, o.getValue());
-            context.assertEquals(value, consulSyncMap.get(key));
-          } catch (Exception e) {
-            context.fail(e);
-          }
-          async.complete();
-        } else {
-          context.fail(event.cause());
-        }
-      }));
+  public void syncMapOperation() {
+    String k = "myKey";
+    String v = "myValue";
+
+    ConsulSyncMap<String, String> syncMap = new ConsulSyncMap<>("syncMapTest", "testSyncMapNodeId", vertx, consulClient);
+
+    syncMap.put(k, v);
+    assertFalse(syncMap.isEmpty());
+
+    assertEquals(syncMap.get(k), v);
+
+    assertTrue(syncMap.size() > 0);
+    assertTrue(syncMap.containsKey(k));
+    assertTrue(syncMap.containsValue(v));
+
+    assertTrue(syncMap.keySet().contains(k));
+    assertTrue(syncMap.values().contains(v));
+
+    syncMap.entrySet().forEach(entry -> {
+      assertEquals(k, entry.getKey());
+      assertEquals(v, entry.getValue());
+    });
+
+    String value = syncMap.remove(k);
+    assertEquals(value, v);
+    assertNull(syncMap.get(k));
+
+    syncMap.clear();
+    assertTrue(syncMap.isEmpty());
+
   }
 
-  @Test
-  public void verify_remove(TestContext context) {
-    Async async = context.async();
-    // given
-    String key = "keyA";
-    // when
-    rule.vertx().executeBlocking(event -> {
-      consulSyncMap.remove(key);
-      sleep(2000L, context);
-      event.complete();
-    }, res ->
-      consulClient.getValue(MAP_NAME + "/" + key, event -> {
-        if (event.succeeded()) {
-          context.assertNull(event.result().getValue());
-          context.assertNull(consulSyncMap.get(key));
-          async.complete();
-        } else {
-          context.fail(event.cause());
-        }
-      }));
+  @After
+  public void tearDown() {
+    destroySessionId();
+    vertx.close();
+    consulClient.close();
   }
 
-  private void sleep(Long sleepTime, TestContext context) {
+  private String getSessionId() {
+    CompletableFuture<String> future = new CompletableFuture<>();
+    SessionOptions sessionOptions = new SessionOptions()
+      .setBehavior(SessionBehavior.DELETE)
+      .setLockDelay(0) // can't specify 0 - perhaps bug in consul client implementation.
+      .setName("test");
+    consulClient.createSessionWithOptions(sessionOptions, resultHandler -> {
+      if (resultHandler.succeeded()) future.complete(resultHandler.result());
+      else future.completeExceptionally(resultHandler.cause());
+    });
+
+    String sId = null;
     try {
-      Thread.sleep(sleepTime);
+      sId = future.get(2000, TimeUnit.MILLISECONDS);
+    } catch (ExecutionException | InterruptedException | TimeoutException e) {
+      fail(e.getMessage());
+    }
+    return sId;
+  }
+
+  private void destroySessionId() {
+    CountDownLatch latch = new CountDownLatch(1);
+    consulClient.destroySession(sessionId, event -> latch.countDown());
+    try {
+      latch.await(2000, TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
-      context.fail(e);
+      fail(e.getMessage());
     }
   }
-
 }

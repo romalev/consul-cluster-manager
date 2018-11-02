@@ -9,11 +9,6 @@ import io.vertx.core.shareddata.Lock;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 /**
  * Consul-based implementation of an asynchronous exclusive lock which can be obtained from any node in the cluster.
  * When the lock is obtained (acquired), no-one else in the cluster can obtain the lock with the same name until the lock is released.
@@ -63,19 +58,10 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * Tries to obtain a lock. MUST NOT be executed on the vertx event loop.
    *
    * @return true - lock has been successfully obtained, false - otherwise.
-   * @throws InterruptedException
-   * @throws TimeoutException
-   * @throws ExecutionException
    */
-  public boolean tryObtain() throws InterruptedException, TimeoutException, ExecutionException {
+  public boolean tryObtain() {
     log.trace("[" + nodeId + "]" + " is trying to obtain a lock on: " + lockName);
-    CompletableFuture<Boolean> futureObtainedLock = new CompletableFuture<>();
-    obtain().setHandler(event -> {
-      if (event.succeeded()) futureObtainedLock.complete(event.result());
-      else futureObtainedLock.completeExceptionally(event.cause());
-    });
-
-    boolean lockObtained = futureObtainedLock.get(timeout, TimeUnit.MILLISECONDS);
+    boolean lockObtained = toSync(obtain(), timeout);
     if (lockObtained) {
       log.info("Lock on: " + lockName + " has been obtained.");
     }
@@ -99,18 +85,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return consul session id.
    */
   private String obtainSessionId(String checkId) {
-    CompletableFuture<String> futureSessionId = new CompletableFuture<>();
-    registerSession("Session for lock: " + lockName + " of: " + nodeId, checkId).setHandler(event -> {
-      if (event.succeeded()) futureSessionId.complete(event.result());
-      else futureSessionId.completeExceptionally(event.cause());
-    });
-    String sessionId;
-    try {
-      sessionId = futureSessionId.get(timeout, TimeUnit.MILLISECONDS);
-    } catch (InterruptedException | ExecutionException | TimeoutException e) {
-      throw new VertxException(e);
-    }
-    return sessionId;
+    return toSync(registerSession("Session for lock: " + lockName + " of: " + nodeId, checkId), timeout);
   }
 
   /**

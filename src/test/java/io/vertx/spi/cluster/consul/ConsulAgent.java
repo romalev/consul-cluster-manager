@@ -9,12 +9,6 @@ import java.io.IOException;
 import java.net.ServerSocket;
 
 public class ConsulAgent {
-
-  // slf4j
-  static {
-    System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
-  }
-
   private final Logger log = LoggerFactory.getLogger(ConsulAgent.class);
 
   private int port;

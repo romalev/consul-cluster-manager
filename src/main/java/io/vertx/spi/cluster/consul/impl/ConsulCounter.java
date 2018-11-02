@@ -110,8 +110,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
               if (putRes.result()) {
                 result.complete(postGet ? postValue : preValue);
               } else {
-                // do retry
-                // TODO: open question : overflow possible ? - define number of allowed retries ???
+                // do retry until succeeded
                 calculateAndCompareAndSwap(postGet, value, result.completer());
               }
             } else {

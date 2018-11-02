@@ -1,8 +1,11 @@
 package io.vertx.spi.cluster.consul.impl;
 
+import io.vertx.core.Closeable;
 import io.vertx.core.Handler;
+import io.vertx.core.VertxException;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
+import io.vertx.ext.consul.Watch;
 import io.vertx.ext.consul.WatchResult;
 import io.vertx.spi.cluster.consul.impl.ConsulKvListener.EntryEvent.EventType;
 
@@ -16,7 +19,7 @@ import java.util.Optional;
  *
  * @author Roman Levytskyi
  */
-public interface ConsulKvListener {
+public interface ConsulKvListener extends Closeable {
 
   /**
    * Receives an event emitted by consul watch.
@@ -24,6 +27,11 @@ public interface ConsulKvListener {
    * @param event - holds the event's data.
    */
   void entryUpdated(EntryEvent event);
+
+  default void listen(Watch<KeyValueList> watch) {
+    if (watch != null) watch.setHandler(kvWatchHandler()).start();
+    else throw new VertxException("Watch is null!");
+  }
 
   /**
    * Transforms incoming {@link io.vertx.ext.consul.KeyValueList} into internal {@link EntryEvent}
@@ -91,7 +99,7 @@ public interface ConsulKvListener {
       this.entry = entry;
     }
 
-    public EventType getEventType() {
+    EventType getEventType() {
       return eventType;
     }
 
