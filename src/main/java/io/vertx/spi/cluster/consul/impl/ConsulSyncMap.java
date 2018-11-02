@@ -82,6 +82,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
     toSync(deleteAll(), timeout);
   }
 
+  // async version of clear - can be executed directly on event loop.
   public void clear(Handler<AsyncResult<Void>> handler) {
     deleteAll().setHandler(handler);
   }

@@ -25,9 +25,9 @@ import java.util.stream.Collectors;
  *
  * @author Roman Levytskyi
  */
-public class ConsulClusterNodeSet extends ConsulMap<String, String> implements ConsulKvListener {
+public class ClusterNodeSet extends ConsulMap<String, String> implements KvListener {
 
-  private final static Logger log = LoggerFactory.getLogger(ConsulClusterNodeSet.class);
+  private final static Logger log = LoggerFactory.getLogger(ClusterNodeSet.class);
 
   private final static String NAME = "__vertx.nodes";
   private final String sessionId;
@@ -37,7 +37,7 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
   private NodeListener nodeListener;
 
 
-  public ConsulClusterNodeSet(String nodeId, Vertx vertx, ConsulClient consulClient, ConsulClientOptions options, String sessionId) {
+  public ClusterNodeSet(String nodeId, Vertx vertx, ConsulClient consulClient, ConsulClientOptions options, String sessionId) {
     super(NAME, nodeId, vertx, consulClient);
     this.sessionId = sessionId;
     watch = Watch.keyPrefix(NAME, vertx, options);

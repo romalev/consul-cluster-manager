@@ -7,7 +7,7 @@ import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.Watch;
 import io.vertx.ext.consul.WatchResult;
-import io.vertx.spi.cluster.consul.impl.ConsulKvListener.EntryEvent.EventType;
+import io.vertx.spi.cluster.consul.impl.KvListener.EntryEvent.EventType;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -19,7 +19,7 @@ import java.util.Optional;
  *
  * @author Roman Levytskyi
  */
-public interface ConsulKvListener extends Closeable {
+public interface KvListener extends Closeable {
 
   /**
    * Receives an event emitted by consul watch.

@@ -50,7 +50,7 @@ public class ConsulClusterManager implements ClusterManager {
   private final Map<String, Map<?, ?>> syncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMap<?, ?>> asyncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
-  private ConsulClusterNodeSet nodeSet;
+  private ClusterNodeSet nodeSet;
   private Vertx vertx;
   private ConsulClient cC;
   private String checkId; // tcp consul check id
@@ -155,7 +155,7 @@ public class ConsulClusterManager implements ClusterManager {
       active = true;
       try {
         cC = ConsulClient.create(vertx, cClOptns);
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
+        nodeSet = new ClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
       } catch (final Exception e) {
         future.fail(e);
       }
@@ -216,13 +216,13 @@ public class ConsulClusterManager implements ClusterManager {
       .compose(aVoid -> registerService())
       .compose(aVoid -> registerTcpCheck())
       .compose(aVoid ->
-        registerSession("Session for ephemeral keys for: " + nodeId, SessionBehavior.DELETE)
+        registerSession("Session for ephemeral keys for: " + nodeId)
           .compose(s -> {
             ephemeralSessionId = s;
             return succeededFuture();
           }))
       .compose(aVoid -> {
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
+        nodeSet = new ClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
         return succeededFuture();
       })
       .compose(aVoid -> {
@@ -318,32 +318,6 @@ public class ConsulClusterManager implements ClusterManager {
   }
 
   /**
-   * Creates consul session. Consul session is used (in context of vertx cluster manager) to create ephemeral map entries.
-   *
-   * @param sessionName - session name.
-   * @return session id.
-   */
-  private Future<String> registerSession(String sessionName, SessionBehavior sessionBehavior) {
-    Future<String> future = Future.future();
-    SessionOptions sessionOptions = new SessionOptions()
-      .setBehavior(sessionBehavior)
-      .setLockDelay(0)
-      .setName(sessionName)
-      .setChecks(Arrays.asList(checkId, "serfHealth"));
-
-    cC.createSessionWithOptions(sessionOptions, session -> {
-      if (session.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - " + sessionName + ": " + session.result() + " has been registered for .");
-        future.complete(session.result());
-      } else {
-        log.error("[" + nodeId + "]" + " - Failed to register the session.", session.cause());
-        future.fail(session.cause());
-      }
-    });
-    return future;
-  }
-
-  /**
    * Gets the vertx node de-registered from consul cluster.
    *
    * @return completed future if vertx node has been successfully de-registered from consul cluster, failed future - otherwise.
@@ -369,6 +343,32 @@ public class ConsulClusterManager implements ClusterManager {
       else {
         log.error("[" + nodeId + "]" + " - Failed to deregister check: " + checkId, resultHandler.cause());
         future.fail(resultHandler.cause());
+      }
+    });
+    return future;
+  }
+
+  /**
+   * Creates consul session. Consul session is used (in context of vertx cluster manager) to create ephemeral map entries.
+   *
+   * @param sessionName - session name.
+   * @return session id.
+   */
+  private Future<String> registerSession(String sessionName) {
+    Future<String> future = Future.future();
+    SessionOptions sessionOptions = new SessionOptions()
+      .setBehavior(SessionBehavior.DELETE)
+      .setLockDelay(0)
+      .setName(sessionName)
+      .setChecks(Arrays.asList(checkId, "serfHealth"));
+
+    cC.createSessionWithOptions(sessionOptions, session -> {
+      if (session.succeeded()) {
+        log.trace("[" + nodeId + "]" + " - " + sessionName + ": " + session.result() + " has been registered for .");
+        future.complete(session.result());
+      } else {
+        log.error("[" + nodeId + "]" + " - Failed to register the session.", session.cause());
+        future.fail(session.cause());
       }
     });
     return future;

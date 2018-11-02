@@ -38,7 +38,7 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureString;
  *
  * @author Roman Levytskyi
  */
-public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V>, ConsulKvListener {
+public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V>, KvListener {
 
   private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
@@ -72,7 +72,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     assertKeyAndValueAreNotNull(k, v)
       .compose(aVoid -> getSubsByEbAddress(k.toString()))
       .compose(vs -> cacheablePut(k, vs, v))
-      .setHandler(event -> vertx.runOnContext(action -> completionHandler.handle(event)));
+      .setHandler(completionHandler);
   }
 
   @Override
@@ -87,7 +87,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         */
     assertKeyIsNotNull(k)
       .compose(aVoid -> cacheableGet(k))
-      .setHandler(event -> vertx.runOnContext(action -> asyncResultHandler.handle(event)));
+      .setHandler(asyncResultHandler);
   }
 
   @Override
