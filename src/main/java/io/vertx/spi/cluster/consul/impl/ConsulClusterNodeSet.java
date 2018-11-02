@@ -30,11 +30,10 @@ public class ConsulClusterNodeSet extends ConsulMap<String, String> implements C
   private final static Logger log = LoggerFactory.getLogger(ConsulClusterNodeSet.class);
 
   private final static String NAME = "__vertx.nodes";
-
+  private final String sessionId;
   // local cache of all vertx cluster nodes.
   private Set<String> nodes = new HashSet<>();
   private Watch<KeyValueList> watch;
-  private final String sessionId;
   private NodeListener nodeListener;
 
 
