@@ -2,6 +2,7 @@ package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.*;
 import io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo;
+import io.vertx.core.impl.ContextInternal;
 import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -42,7 +43,6 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
-  private final ConsulClientOptions cCOptions;
   private final KeyValueOptions kvOpts;
   /*
    * Implementation of local IN-MEMORY multimap cache which is essentially concurrent hash map under the hood.
@@ -58,10 +58,9 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   public ConsulAsyncMultiMap(String name, Vertx vertx, ConsulClient cC, ConsulClientOptions options, String sessionId, String nodeId) {
     super(name, nodeId, vertx, cC);
-    this.cCOptions = options;
     // options to make entries of this map ephemeral.
     this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
-    watch = Watch.keyPrefix(name, vertx, cCOptions);
+    watch = Watch.keyPrefix(name, vertx, options);
     listen(watch);
     // TODO: remove it.
     vertx.setPeriodic(15000, event -> log.trace("[" + nodeId + "]" + " CacheMultiMap is : " + cache));
@@ -73,21 +72,6 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       .compose(aVoid -> getSubsByEbAddress(k.toString()))
       .compose(vs -> cacheablePut(k, vs, v))
       .setHandler(completionHandler);
-  }
-
-  @Override
-  public void get(K k, Handler<AsyncResult<ChoosableIterable<V>>> asyncResultHandler) {
-        /*
-        TODO:
-        Keeping subs cache in sync with what's stored in consul KV store is a little tricky.
-        As entries are added or removed the ConsulKvListener will be called but when the node joins the cluster
-        - it isn't provided the initial state via the ConsulKvListener therefore -> the first time map get is called for
-        a subscription we *always* eagerly fetch the subs from Consul KV store, then consider that the initial state.
-        In parallel we let the watch to monitor for updates -> see CacheMultiMap constructor - essentially last write wins.
-        */
-    assertKeyIsNotNull(k)
-      .compose(aVoid -> cacheableGet(k))
-      .setHandler(asyncResultHandler);
   }
 
   @Override
@@ -123,6 +107,65 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
         return CompositeFuture.all(futures).compose(compositeFuture -> Future.<Void>succeededFuture());
 
       }).setHandler(completionHandler);
+  }
+
+  /* Keeping subs cache in sync with what's stored in consul KV store is a little tricky.
+   * As entries are added or removed the ConsulKvListener will be called but when the node joins the cluster
+   * - it isn't provided the initial state via the ConsulKvListener therefore -> the first time map get is called for
+   * a subscription we *always* eagerly fetch the subs from Consul KV store, then consider that the initial state.
+   * In parallel we let the watch to monitor for updates -> see CacheMultiMap constructor - essentially last write wins.
+   */
+  @Override
+  public void get(K k, Handler<AsyncResult<ChoosableIterable<V>>> resultHandler) {
+    if (Objects.isNull(k)) resultHandler.handle(Future.failedFuture("Key can't be null."));
+    ContextInternal context = (ContextInternal) vertx.getOrCreateContext();
+    Queue<GetRequest<K, V>> getRequests = (Queue<GetRequest<K, V>>) context.contextData().computeIfAbsent(this, ctx -> new ArrayDeque<>());
+    synchronized (getRequests) {
+      ChoosableSet<V> entries = cache.get(k);
+      if (entries != null && entries.isInitialised() && getRequests.isEmpty()) {
+        context.runOnContext(v -> resultHandler.handle(Future.succeededFuture(entries)));
+      } else {
+        getRequests.add(new GetRequest<>(k, resultHandler));
+        if (getRequests.size() == 1) {
+          dequeueGet(context, getRequests);
+        }
+      }
+    }
+  }
+
+  private void dequeueGet(ContextInternal context, Queue<GetRequest<K, V>> getRequests) {
+    GetRequest<K, V> getRequest;
+    for (; ; ) {
+      getRequest = getRequests.peek();
+      ChoosableSet<V> entries = cache.get(getRequest.key);
+      if (entries != null && entries.isInitialised()) {
+        Handler<AsyncResult<ChoosableIterable<V>>> handler = getRequest.handler;
+        context.runOnContext(v -> {
+          handler.handle(Future.succeededFuture(entries));
+        });
+        getRequests.remove();
+        if (getRequests.isEmpty()) {
+          return;
+        }
+      } else {
+        break;
+      }
+    }
+    K key = getRequest.key;
+    Handler<AsyncResult<ChoosableIterable<V>>> handler = getRequest.handler;
+    cacheableGet(key).setHandler(resultHandler -> {
+      ChoosableSet<V> result = (ChoosableSet<V>) resultHandler.result();
+      result.setInitialised();
+      synchronized (getRequests) {
+        context.runOnContext(v -> {
+          handler.handle(Future.succeededFuture(result));
+        });
+        getRequests.remove();
+        if (!getRequests.isEmpty()) {
+          dequeueGet(context, getRequests);
+        }
+      }
+    });
   }
 
   private Future<Void> cacheablePut(K k, Set<V> subs, V sub) {
@@ -168,11 +211,11 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
             return deleteConsulValue(keyPath)
               .compose(removeSucceeded -> {
                 // immediately update the internal cache.
-                cache.remove(key, value);
+                removeFromCache(key, value);
                 return Future.succeededFuture(true);
               });
           } else {
-            cache.remove(key, value);
+            removeFromCache(key, value);
             return put(key, subs);
           }
         });
@@ -180,7 +223,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       String keyPath = addressKeyPath(key.toString());
       return deleteConsulValues(keyPath).compose(event -> {
         // immediately update the internal cache.
-        cache.remove(key, value);
+        removeFromCache(key, value);
         return Future.succeededFuture(true);
       });
     }
@@ -338,4 +381,13 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     Future.<Void>succeededFuture().setHandler(completionHandler);
   }
 
+  private static class GetRequest<K, V> {
+    final K key;
+    final Handler<AsyncResult<ChoosableIterable<V>>> handler;
+
+    GetRequest(K key, Handler<AsyncResult<ChoosableIterable<V>>> handler) {
+      this.key = key;
+      this.handler = handler;
+    }
+  }
 }
