@@ -1,12 +1,11 @@
 package io.vertx;
 
-import io.vertx.core.ConsulClusteredComplexHATest;
 import io.vertx.core.ConsulClusteredHATest;
-import io.vertx.core.shareddata.ConsulAsyncMultiMapTest;
-import io.vertx.core.shareddata.ConsulClusteredAsyncMapTest;
-import io.vertx.core.shareddata.ConsulClusteredAsynchronousLockTest;
-import io.vertx.core.shareddata.ConsulClusteredSharedCounterTest;
+import io.vertx.core.eventbus.Consul_AP_ClusteredEventBusTest;
+import io.vertx.core.eventbus.Consul_CP_ClusteredEventBusTest;
+import io.vertx.core.shareddata.*;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMapTest;
+import io.vertx.spi.cluster.consul.impl.ConsumerRoundRobinTest;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
@@ -20,13 +19,21 @@ import org.junit.runners.Suite;
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-  ConsulAsyncMultiMapTest.class,
+  Consul_AP_MultiMapTest.class,
+  Consul_CP_MultiMapTest.class,
+  ConsulSyncMapTest.class,
+  ConsulClusteredAsyncMapTest.class,
   ConsulClusteredAsynchronousLockTest.class,
   ConsulClusteredSharedCounterTest.class,
-  ConsulClusteredAsyncMapTest.class,
-  ConsulSyncMapTest.class,
-  ConsulClusteredComplexHATest.class,
-  ConsulClusteredHATest.class
+  Consul_AP_ClusteredEventBusTest.class,
+  Consul_CP_ClusteredEventBusTest.class,
+  ConsumerRoundRobinTest.class,
+  ConsulClusteredHATest.class, // ???
+  // TODO: get tests below done!
+  // ConsulClusteredComplexHATest.class,
+  // ConsulFaultToleranceTest.class,
+  // ConsulClusteredSessionHandlerTest.class
+
 })
 public class ConsulClusterManagerTestSuite {
 }

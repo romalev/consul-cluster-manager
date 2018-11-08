@@ -33,6 +33,8 @@ dependencies {
   testCompile group: 'io.vertx', name: 'vertx-web', version: vertxSnaphotVersion
   testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'tests', version: vertxSnaphotVersion
   testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'test-sources', version: vertxSnaphotVersion
+  testCompile group: 'io.vertx', name: 'vertx-web', classifier: 'tests', version: vertxSnaphotVersion
+  testCompile group: 'io.vertx', name: 'vertx-web', classifier: 'test-sources', version: vertxSnaphotVersion
 
   compile group: 'io.vertx', name: 'vertx-core', version: vertxSnaphotVersion
   compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxSnaphotVersion

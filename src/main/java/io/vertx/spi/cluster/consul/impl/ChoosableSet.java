@@ -33,8 +33,8 @@ public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
     ids.add(elem);
   }
 
-  public void remove(T elem) {
-    ids.remove(elem);
+  public boolean remove(T elem) {
+    return ids.remove(elem);
   }
 
   public void merge(Set<T> toMerge) {

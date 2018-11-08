@@ -41,6 +41,7 @@ class ConversationUtils {
     JsonObject jsonObject = new JsonObject(consulEntry);
     K key = asObject(jsonObject.getString(KEY_TAG));
     V value = asObject(jsonObject.getString(VALUE_TAG));
+    // TODO: NODE ID can be extracted directly from the consul key!
     String nodeId = jsonObject.getString(NODE_ID_TAG);
     return new ConsulEntry<>(key, value, nodeId);
   }

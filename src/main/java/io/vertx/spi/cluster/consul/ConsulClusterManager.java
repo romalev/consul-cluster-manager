@@ -53,10 +53,27 @@ public class ConsulClusterManager implements ClusterManager {
   private ClusterNodeSet nodeSet;
   private Vertx vertx;
   private ConsulClient cC;
-  private String checkId; // tcp consul check id
-  private String ephemeralSessionId; // consul session id used to make map entries ephemeral.
+  private volatile String checkId; // tcp consul check id
+  private volatile String ephemeralSessionId; // consul session id used to make map entries ephemeral.
   private JsonObject nodeTcpAddress = new JsonObject();
   private NetServer netServer; // dummy TCP server to receive and acknowledge heart beats messages from consul.
+  /*
+   * Famous CAP theorem takes place here.
+   * * CP - we trade consistency against availability,
+   * * AP - we trade availability (latency) against consistency.
+   * Given cluster management SPI implementation uses internal caching of consul KV stores (pure @{link ConcurrentHashMap} acts as cache and
+   * caching is implemented on top consul watches.)
+   *
+   * Scenario: imagine we have nodes A and B in our cluster. A puts entry X to Consul KV and gets entry X cached locally.
+   * B receives ENTRY_ADDED event (which is a X entry) and caches it locally accordingly.
+   * Now imagine A removes an entry X from Consul KV and in one nanosecond later (right after remove of entry X has been acknowledged) node B queries entry X
+   * and … well it receives an entry X from local cache since local node B cache became inconsistent with Consul KV since it has not yet received and processed EVENT_REMOVED event.
+   * In order make local caching strongly consistent with Consul KV we have to check if data that is present in local cache is the same as data that is present in Consul KV.
+   *
+   * To enable dirty reads (and prefer having better latency) set {@code preferConsistency} flag to FALSE.
+   * Otherwise set {@code preferConsistency} flag to TRUE to enable strong consistency between local caches and Consul KV.
+   */
+  private boolean preferConsistency = false;
 
   private volatile boolean active;
 
@@ -73,6 +90,14 @@ public class ConsulClusterManager implements ClusterManager {
     this.checkId = nodeId;
   }
 
+  public ConsulClusterManager(final ConsulClientOptions options, final boolean preferConsistency) {
+    Objects.requireNonNull(options, "Consul client options can't be null");
+    this.cClOptns = options;
+    this.nodeId = UUID.randomUUID().toString();
+    this.checkId = nodeId;
+    this.preferConsistency = preferConsistency;
+  }
+
   @Override
   public void setVertx(Vertx vertx) {
     this.vertx = vertx;
@@ -81,7 +106,7 @@ public class ConsulClusterManager implements ClusterManager {
   @Override
   public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
     Future<AsyncMultiMap<K, V>> futureAsyncMultiMap = Future.future();
-    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, ephemeralSessionId, nodeId));
+    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, ephemeralSessionId, nodeId, preferConsistency));
     futureAsyncMultiMap.complete(asyncMultiMap);
     futureAsyncMultiMap.setHandler(asyncResultHandler);
   }
@@ -155,12 +180,16 @@ public class ConsulClusterManager implements ClusterManager {
       active = true;
       try {
         cC = ConsulClient.create(vertx, cClOptns);
-        nodeSet = new ClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
       } catch (final Exception e) {
         future.fail(e);
       }
-      doJoin().setHandler(future.completer());
-      // TODO: fallback
+      doJoin().setHandler(nodeJoinedEvent -> {
+        if (nodeJoinedEvent.succeeded()) future.complete();
+        else {
+          // TODO: fallback
+          future.complete();
+        }
+      });
     } else {
       log.warn(nodeId + " is NOT active.");
       future.complete();
@@ -223,30 +252,43 @@ public class ConsulClusterManager implements ClusterManager {
           }))
       .compose(aVoid -> {
         nodeSet = new ClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
+        nodeSet.setActive(active);
         return succeededFuture();
       })
-      .compose(aVoid -> {
-        Future<Void> future = Future.future();
-        ((ConsulSyncMap) getSyncMap(HA_INFO)).clear(future.completer());
-        return future;
-      })
-      .compose(aVoid -> nodeSet.add(nodeTcpAddress))
-      .compose(aVoid -> nodeSet.discover());
+      .compose(aVoid -> nodeSet.isEmpty()
+        .compose(isEmpty -> {
+          if (isEmpty) {
+            Future<Void> future = Future.future();
+            log.trace("Clearing up HA_INFO since the cluster is empty");
+            ((ConsulSyncMap) getSyncMap(HA_INFO)).clear(future.completer());
+            return future;
+          } else return succeededFuture();
+        }))
+      .compose(aVoid -> nodeSet.add(nodeTcpAddress));
   }
 
   /**
    * Existing node leaving the cluster behaviour.
    */
   private Future<Void> doLeave() {
-    netServer.close();
-    // stop watches and clear caches.
-    nodeSet.close(handler -> {
-    });
-    asyncMultiMaps.values().forEach(map -> ((Closeable) map).close(handler -> {
-    }));
-    return destroySession(ephemeralSessionId)
+    nodeSet.setActive(active);
+    return nodeSet.remove()
+      .compose(aBoolean -> {
+        Future<Void> future = Future.future();
+        nodeSet.close(future.completer());
+        return future;
+      })
+      .compose(aVoid -> destroySession(ephemeralSessionId))
       .compose(aVoid -> deregisterNode())
-      .compose(aVoid -> deregisterTcpCheck());
+      .compose(aVoid -> deregisterTcpCheck())
+      .compose(aVoid -> {
+        netServer.close();
+        asyncMultiMaps.values().forEach(map -> ((Closeable) map).close(event -> {
+        }));
+        log.trace("Closing consul client...");
+        cC.close();
+        return succeededFuture();
+      });
   }
 
 

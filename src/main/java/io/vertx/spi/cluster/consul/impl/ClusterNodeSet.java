@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * <p>A set that attempts to keep all cluster node's data locally cached. This class
@@ -35,28 +34,14 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
   private Set<String> nodes = new HashSet<>();
   private Watch<KeyValueList> watch;
   private NodeListener nodeListener;
+  private boolean active;
 
 
   public ClusterNodeSet(String nodeId, Vertx vertx, ConsulClient consulClient, ConsulClientOptions options, String sessionId) {
     super(NAME, nodeId, vertx, consulClient);
     this.sessionId = sessionId;
     watch = Watch.keyPrefix(NAME, vertx, options);
-  }
-
-  /**
-   * Discovers nodes that are currently available within the cluster.
-   *
-   * @return completed future if nodes (consul services) have been successfully fetched from consul cluster,
-   * failed future - otherwise.
-   */
-  public Future<Void> discover() {
-    return consulKeys()
-      .compose(list -> {
-        if (list == null) return Future.succeededFuture();
-        nodes = list.stream().map(this::actualKey).collect(Collectors.toSet());
-        log.trace("[" + nodeId + "]" + " - Available nodes within the cluster: " + nodes);
-        return Future.succeededFuture();
-      });
+    startWatching(watch);
   }
 
   /**
@@ -73,17 +58,32 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
     return future;
   }
 
+  public Future<Boolean> remove() {
+    return deleteConsulValue(keyPath(nodeId));
+  }
+
+  public Future<Boolean> isEmpty() {
+    return consulKeys().compose(nodeIds -> Future.succeededFuture(nodeIds.isEmpty()));
+  }
+
+  public void setActive(boolean active) {
+    this.active = active;
+  }
+
+
   public List<String> get() {
     return new ArrayList<>(nodes);
   }
 
   public void nodeListener(NodeListener nodeListener) {
     this.nodeListener = nodeListener;
-    listen(watch);
   }
 
   @Override
-  public void entryUpdated(EntryEvent event) {
+  public synchronized void entryUpdated(EntryEvent event) {
+    if (!active) {
+      return;
+    }
     vertx.executeBlocking(workingThread -> {
       String receivedNodeId = actualKey(event.getEntry().getKey());
       switch (event.getEventType()) {
@@ -117,7 +117,6 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
 
   @Override
   public void close(Handler<AsyncResult<Void>> completionHandler) {
-    nodes.clear();
     watch.stop();
     Future.<Void>succeededFuture().setHandler(completionHandler);
   }

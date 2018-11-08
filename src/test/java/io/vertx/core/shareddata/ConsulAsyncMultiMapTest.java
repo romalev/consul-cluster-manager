@@ -4,9 +4,6 @@ import io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo;
 import io.vertx.core.net.impl.ServerID;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ChoosableIterable;
-import io.vertx.core.spi.cluster.ClusterManager;
-import io.vertx.ext.consul.ConsulClientOptions;
-import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -19,12 +16,7 @@ import java.util.stream.Stream;
 
 public class ConsulAsyncMultiMapTest extends AsyncMultiMapTest {
 
-  private volatile AsyncMultiMap<String, ClusterNodeInfo> clusterNodeIdMap;
-
-  @Override
-  protected ClusterManager getClusterManager() {
-    return new ConsulClusterManager(new ConsulClientOptions());
-  }
+  protected volatile AsyncMultiMap<String, ClusterNodeInfo> clusterNodeIdMap;
 
   @Override
   public void setUp() throws Exception {
@@ -41,10 +33,8 @@ public class ConsulAsyncMultiMapTest extends AsyncMultiMapTest {
 
   @Test
   public void testAddAndGetClusterNodeInfo() {
-    final String nodeA = UUID.randomUUID().toString();
-    final String nodeB = UUID.randomUUID().toString();
-    ClusterNodeInfo clusterNodeAInfo = new ClusterNodeInfo(nodeA, new ServerID(8080, "localhost"));
-    ClusterNodeInfo clusterNodeBInfo = new ClusterNodeInfo(nodeB, new ServerID(8081, "localhost"));
+    ClusterNodeInfo clusterNodeAInfo = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8080, "localhost"));
+    ClusterNodeInfo clusterNodeBInfo = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8081, "localhost"));
     String address = "testAddAndGetClusterNodeInfo";
 
     clusterNodeIdMap.add(address, clusterNodeAInfo, cHandler_1 -> {
@@ -67,10 +57,8 @@ public class ConsulAsyncMultiMapTest extends AsyncMultiMapTest {
 
   @Test
   public void testRemoveClusterNodeInfo() {
-    final String nodeA = UUID.randomUUID().toString();
-    final String nodeB = UUID.randomUUID().toString();
-    ClusterNodeInfo clusterNodeAInfo = new ClusterNodeInfo(nodeA, new ServerID(8080, "localhost"));
-    ClusterNodeInfo clusterNodeBInfo = new ClusterNodeInfo(nodeB, new ServerID(8081, "localhost"));
+    ClusterNodeInfo clusterNodeAInfo = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8080, "localhost"));
+    ClusterNodeInfo clusterNodeBInfo = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8081, "localhost"));
     String address = "testRemoveClusterNodeInfo";
 
     clusterNodeIdMap.add(address, clusterNodeAInfo, cHandler_1 -> {
@@ -105,14 +93,12 @@ public class ConsulAsyncMultiMapTest extends AsyncMultiMapTest {
 
   @Test
   public void testRemoveAllForValueClusterNodeInfo() {
-    final String nodeA = UUID.randomUUID().toString();
-    final String nodeB = UUID.randomUUID().toString();
     String users = "users.removeAllForValue";
-    ClusterNodeInfo usersNodeASub = new ClusterNodeInfo(nodeA, new ServerID(8080, "192.168.0.1"));
-    ClusterNodeInfo usersNodeBSub = new ClusterNodeInfo(nodeB, new ServerID(8081, "192.168.0.2"));
+    ClusterNodeInfo usersNodeASub = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8080, "192.168.0.1"));
+    ClusterNodeInfo usersNodeBSub = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8081, "192.168.0.2"));
     String posts = "posts.removeAllForValue";
-    ClusterNodeInfo postsNodeASub = new ClusterNodeInfo(nodeA, new ServerID(8080, "192.168.0.1"));
-    ClusterNodeInfo postsNodeBSub = new ClusterNodeInfo(nodeB, new ServerID(8081, "192.168.0.2"));
+    ClusterNodeInfo postsNodeASub = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8080, "192.168.0.1"));
+    ClusterNodeInfo postsNodeBSub = new ClusterNodeInfo(clusterManager.getNodeID(), new ServerID(8081, "192.168.0.2"));
 
     clusterNodeIdMap.add(users, usersNodeASub, handler_1 -> {
       assertTrue(handler_1.succeeded());

@@ -4,6 +4,8 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
+import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.consul.ServiceOptions;
@@ -17,11 +19,6 @@ public class BobService {
 
   private static final Logger log = LoggerFactory.getLogger(BobService.class);
   private static Vertx vertx;
-
-  // slf4j
-  static {
-    System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
-  }
 
   public static void main(String[] args) throws UnknownHostException {
     log.info("Booting up the Service B...");
@@ -66,11 +63,20 @@ public class BobService {
   private static class ServiceBVerticle extends AbstractVerticle {
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-      vertx.eventBus().consumer("vertx-consul", event -> {
-        log.trace("Command was received: '{}'", event.body());
-        event.reply("pong");
-      });
-      startFuture.complete();
+      EventBus eventBus = getVertx().eventBus();
+      MessageConsumer<String> consumer = eventBus.consumer("vertx-consul");
+      consumer.handler(m -> {
+        consumer.unregister(v -> {
+        });
+        m.reply("pong");
+      }).completionHandler(startFuture);
+//
+//
+//      vertx.eventBus().consumer("vertx-consul", event -> {
+//        log.trace("Command was received: '{}'", event.body());
+//        event.reply("pong");
+//      });
+//      startFuture.complete();
     }
   }
 }

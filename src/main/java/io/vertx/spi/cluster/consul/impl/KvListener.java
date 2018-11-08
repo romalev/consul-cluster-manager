@@ -28,7 +28,7 @@ public interface KvListener extends Closeable {
    */
   void entryUpdated(EntryEvent event);
 
-  default void listen(Watch<KeyValueList> watch) {
+  default void startWatching(Watch<KeyValueList> watch) {
     if (watch != null) watch.setHandler(kvWatchHandler()).start();
     else throw new VertxException("Watch is null!");
   }

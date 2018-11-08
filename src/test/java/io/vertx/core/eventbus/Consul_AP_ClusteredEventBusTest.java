@@ -1,8 +1,6 @@
 package io.vertx.core.eventbus;
 
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Future;
-import io.vertx.core.Verticle;
+import io.vertx.core.*;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
@@ -10,16 +8,23 @@ import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 
-public class ConsulClusteredEventBusTest extends ClusteredEventBusTest {
+public class Consul_AP_ClusteredEventBusTest extends ClusteredEventBusTest {
 
   @Override
   protected ClusterManager getClusterManager() {
-    return new ConsulClusterManager(new ConsulClientOptions());
+    return new ConsulClusterManager(new ConsulClientOptions(), false);
   }
 
+  /**
+   * This test is a bit enhanced - contains 1.5 sec delays to let local cache catches up with consul KV.
+   * Otherwise assertEquals(ReplyFailure.NO_HANDLERS, replyException.failureType()) will fail since
+   * Handler will be found and TIMEOUT will take place.
+   */
   @Test
   public void testSendWhileUnsubscribing() throws Exception {
     startNodes(2);
@@ -40,6 +45,11 @@ public class ConsulClusteredEventBusTest extends ClusteredEventBusTest {
             sendMsg();
           });
         } else {
+          try {
+            Thread.sleep(1500);
+          } catch (InterruptedException e) {
+            fail(e);
+          }
           getVertx().eventBus().send("whatever", "marseille", ar -> {
             Throwable cause = ar.cause();
             assertThat(cause, instanceOf(ReplyException.class));
@@ -63,6 +73,11 @@ public class ConsulClusteredEventBusTest extends ClusteredEventBusTest {
             consumer.unregister(v -> unregistered.set(true));
             unregisterCalled = true;
           }
+          try {
+            Thread.sleep(1500);
+          } catch (InterruptedException e) {
+            fail(e);
+          }
           m.reply("ok");
         }).completionHandler(startFuture);
       }
@@ -83,4 +98,52 @@ public class ConsulClusteredEventBusTest extends ClusteredEventBusTest {
     vertices[1].close(v -> closeLatch.countDown());
     awaitLatch(closeLatch);
   }
+
+  @Override
+  protected <T> void testPublish(T val, Consumer<T> consumer) {
+    int numNodes = 3;
+    startNodes(numNodes);
+    AtomicInteger count = new AtomicInteger();
+    class MyHandler implements Handler<Message<T>> {
+      @Override
+      public void handle(Message<T> msg) {
+        try {
+          Thread.sleep(1500);
+        } catch (InterruptedException e) {
+          fail(e);
+        }
+        if (consumer == null) {
+          assertFalse(msg.isSend());
+          assertEquals(val, msg.body());
+        } else {
+          consumer.accept(msg.body());
+        }
+        if (count.incrementAndGet() == numNodes - 1) {
+          testComplete();
+        }
+      }
+    }
+    AtomicInteger registerCount = new AtomicInteger(0);
+    class MyRegisterHandler implements Handler<AsyncResult<Void>> {
+      @Override
+      public void handle(AsyncResult<Void> ar) {
+        assertTrue(ar.succeeded());
+        try {
+          Thread.sleep(1500);
+        } catch (InterruptedException e) {
+          fail(e);
+        }
+        if (registerCount.incrementAndGet() == 2) {
+          vertices[0].eventBus().publish(ADDRESS1, val);
+        }
+      }
+    }
+    MessageConsumer reg = vertices[2].eventBus().<T>consumer(ADDRESS1).handler(new MyHandler());
+    reg.completionHandler(new MyRegisterHandler());
+    reg = vertices[1].eventBus().<T>consumer(ADDRESS1).handler(new MyHandler());
+    reg.completionHandler(new MyRegisterHandler());
+    vertices[0].eventBus().publish(ADDRESS1, val);
+    await();
+  }
+
 }
