@@ -1,6 +1,9 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo;
 import io.vertx.core.impl.TaskQueue;
 import io.vertx.core.impl.VertxInternal;
@@ -9,7 +12,9 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.AsyncMultiMap;
 import io.vertx.core.spi.cluster.ChoosableIterable;
-import io.vertx.ext.consul.*;
+import io.vertx.ext.consul.KeyValue;
+import io.vertx.ext.consul.KeyValueList;
+import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,7 +46,7 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.*;
  *
  * @author Roman Levytskyi
  */
-public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V>, KvListener {
+public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V> {
 
   private final static Logger log = LoggerFactory.getLogger(ConsulAsyncMultiMap.class);
 
@@ -59,23 +64,15 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    * Note: local cache updates still might kick in through consul watch in case update succeeded in consul agent but wasn't yet acknowledged back to node. Eventually last write wins.
    */
   private ConcurrentMap<K, ChoosableSet<V>> cache;
-  private Watch<KeyValueList> watch;
 
-  public ConsulAsyncMultiMap(String name,
-                             Vertx vertx,
-                             ConsulClient cC,
-                             ConsulClientOptions options,
-                             String sessionId,
-                             String nodeId,
-                             boolean preferConsistency) {
-    super(name, nodeId, vertx, cC);
+  public ConsulAsyncMultiMap(String name, boolean preferConsistency, CmContext context) {
+    super(name, context);
     this.preferConsistency = preferConsistency;
     // options to make entries of this map ephemeral.
-    this.kvOpts = new KeyValueOptions().setAcquireSession(sessionId);
+    this.kvOpts = new KeyValueOptions().setAcquireSession(context.getEphemeralSessionId());
     if (!preferConsistency) { // if cp is disabled then disable caching.
       cache = new ConcurrentHashMap<>();
-      watch = Watch.keyPrefix(name, vertx, options);
-      startWatching(watch);
+      startListening();
     }
   }
 
@@ -141,7 +138,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   private Future<Void> nonCacheablePut(K k, Set<V> subs, V sub) {
     Set<V> newOne = new HashSet<>(subs);
     newOne.add(sub);
-    return putToConsulKv(k, newOne, nodeId)
+    return putToConsulKv(k, newOne, context.getNodeId())
       .compose(aBoolean -> aBoolean ? succeededFuture() : failedFuture(sub.toString() + ": wasn't added to: " + name));
   }
 
@@ -151,14 +148,15 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   }
 
   /*
-   * THIS IS BAD! We are wrapping async call into sync and execute it on the taskQueue. This way we maintain the order
+   * We are wrapping async call into sync and execute it on the taskQueue. This way we maintain the order
    * in which "get" tasks are executed.
    * If we simply implement this method as : return preferConsistency ? nonCacheableGet(key) : cacheableGet(key);
    * then {@link ClusteredEventBusTest.sendNoContext} will fail due to the fact async calls to get subs by key are unordered.
+   * TODO: Is there any way in vert.x ecosystem to execute tasks on the event loop by not giving up an order ?
    */
   private Future<ChoosableSet<V>> doGet(K key) {
     Future<ChoosableSet<V>> out = Future.future();
-    VertxInternal vertxInternal = (VertxInternal) vertx;
+    VertxInternal vertxInternal = (VertxInternal) context.getVertx();
     vertxInternal.getOrCreateContext().<ChoosableSet<V>>executeBlocking(event -> {
       Future<ChoosableSet<V>> future = preferConsistency ? nonCacheableGet(key) : cacheableGet(key);
       ChoosableSet<V> choosableSet = toSync(future, 5000);
@@ -250,7 +248,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   private Future<Set<ConsulEntry<K, Set<V>>>> getEntriesFromConsulKv(Optional<String> address) {
     String consulKey = address.map(this::keyPath).orElse(name);
     Future<KeyValueList> future = Future.future();
-    consulClient.getValues(consulKey, future.completer());
+    context.getConsulClient().getValues(consulKey, future.completer());
 
     return future.compose(keyValueList -> {
       List<KeyValue> keyValues = nullSafeListResult(keyValueList);
@@ -309,7 +307,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     if (choosableSet == null) choosableSet = new ChoosableSet<>(1);
     choosableSet.add(value);
     cache.put(key, choosableSet);
-    log.trace("[" + nodeId + "]" + " Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
+    log.trace("[" + context.getNodeId() + "]" + " Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
   }
 
   private void removeEntryFromCache(K key, V value) {
@@ -318,7 +316,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     choosableSet.remove(value);
     if (choosableSet.isEmpty()) cache.remove(key);
     else cache.put(key, choosableSet);
-    log.trace("[" + nodeId + "]" + " Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
+    log.trace("[" + context.getNodeId() + "]" + " Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
   }
 
   private void addEntriesToCache(K key, ChoosableSet<V> values) {
@@ -326,8 +324,8 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   }
 
   @Override
-  public void entryUpdated(EntryEvent event) {
-    log.trace("[" + nodeId + "]" + " Entry: " + event.getEntry().getKey() + " is " + event.getEventType());
+  protected synchronized void entryUpdated(EntryEvent event) {
+    log.trace("[" + context.getNodeId() + "]" + " Entry: " + event.getEntry().getKey() + " is " + event.getEventType());
     ConsulEntry<K, Set<V>> entry;
     try {
       entry = asConsulEntry(event.getEntry().getValue());
@@ -350,12 +348,5 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   @Override
   public String toString() {
     return Json.encodePrettily(cache);
-  }
-
-  @Override
-  public void close(Handler<AsyncResult<Void>> completionHandler) {
-    if (cache != null) cache.clear();
-    if (watch != null) watch.stop();
-    Future.<Void>succeededFuture().setHandler(completionHandler);
   }
 }

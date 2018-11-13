@@ -1,14 +1,11 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.spi.cluster.NodeListener;
-import io.vertx.ext.consul.*;
+import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -24,24 +21,19 @@ import java.util.Set;
  *
  * @author Roman Levytskyi
  */
-public class ClusterNodeSet extends ConsulMap<String, String> implements KvListener {
+public class ClusterNodeSet extends ConsulMap<String, String> {
 
   private final static Logger log = LoggerFactory.getLogger(ClusterNodeSet.class);
 
   private final static String NAME = "__vertx.nodes";
-  private final String sessionId;
   // local cache of all vertx cluster nodes.
   private Set<String> nodes = new HashSet<>();
-  private Watch<KeyValueList> watch;
   private NodeListener nodeListener;
   private boolean active;
 
-
-  public ClusterNodeSet(String nodeId, Vertx vertx, ConsulClient consulClient, ConsulClientOptions options, String sessionId) {
-    super(NAME, nodeId, vertx, consulClient);
-    this.sessionId = sessionId;
-    watch = Watch.keyPrefix(NAME, vertx, options);
-    startWatching(watch);
+  public ClusterNodeSet(CmContext cmContext) {
+    super(NAME, cmContext);
+    startListening();
   }
 
   /**
@@ -49,17 +41,21 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
    */
   public Future<Void> add(JsonObject details) {
     Future<Void> future = Future.future();
-    putConsulValue(keyPath(nodeId), details.encode(), new KeyValueOptions().setAcquireSession(sessionId)).setHandler(asyncResult -> {
-      if (asyncResult.failed()) {
-        log.error("[" + nodeId + "]" + " - Failed to put node: " + " to: " + name, asyncResult.cause());
-        future.fail(asyncResult.cause());
-      } else future.complete();
-    });
+    putConsulValue(
+      keyPath(context.getNodeId()),
+      details.encode(),
+      new KeyValueOptions().setAcquireSession(context.getEphemeralSessionId()))
+      .setHandler(asyncResult -> {
+        if (asyncResult.failed()) {
+          log.error("[" + context.getNodeId() + "]" + " - Failed to put node: " + " to: " + name, asyncResult.cause());
+          future.fail(asyncResult.cause());
+        } else future.complete();
+      });
     return future;
   }
 
   public Future<Boolean> remove() {
-    return deleteConsulValue(keyPath(nodeId));
+    return deleteConsulValue(keyPath(context.getNodeId()));
   }
 
   public Future<Boolean> isEmpty() {
@@ -84,16 +80,16 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
     if (!active) {
       return;
     }
-    vertx.executeBlocking(workingThread -> {
+    context.getVertx().executeBlocking(workingThread -> {
       String receivedNodeId = actualKey(event.getEntry().getKey());
       switch (event.getEventType()) {
         case WRITE: {
           boolean added = nodes.add(receivedNodeId);
           if (added) {
-            log.trace("[" + nodeId + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
+            log.trace("[" + context.getNodeId() + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
             if (nodeListener != null) {
               nodeListener.nodeAdded(receivedNodeId);
-              log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId);
+              log.trace("[" + context.getNodeId() + "]" + " Node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId);
             }
           }
           break;
@@ -101,10 +97,10 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
         case REMOVE: {
           boolean removed = nodes.remove(receivedNodeId);
           if (removed) {
-            log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has left the cluster.");
+            log.trace("[" + context.getNodeId() + "]" + " Node: " + receivedNodeId + " has left the cluster.");
             if (nodeListener != null) {
               nodeListener.nodeLeft(receivedNodeId);
-              log.trace("[" + nodeId + "]" + " Node: " + receivedNodeId + " has been removed from nodeListener.");
+              log.trace("[" + context.getNodeId() + "]" + " Node: " + receivedNodeId + " has been removed from nodeListener.");
             }
           }
           break;
@@ -114,11 +110,4 @@ public class ClusterNodeSet extends ConsulMap<String, String> implements KvListe
     }, result -> {
     });
   }
-
-  @Override
-  public void close(Handler<AsyncResult<Void>> completionHandler) {
-    watch.stop();
-    Future.<Void>succeededFuture().setHandler(completionHandler);
-  }
-
 }

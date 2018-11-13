@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 
-public class Consul_AP_ClusteredEventBusTest extends ClusteredEventBusTest {
+public class ConsulApClusteredEventBusTest extends ClusteredEventBusTest {
 
   @Override
   protected ClusterManager getClusterManager() {

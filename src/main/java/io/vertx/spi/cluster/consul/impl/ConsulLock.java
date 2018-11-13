@@ -1,12 +1,10 @@
 package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
 import io.vertx.core.VertxException;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.Lock;
-import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
 /**
@@ -39,15 +37,13 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
   /**
    * Creates an instance of consul based lock. MUST NOT be executed on the vertx event loop.
    *
-   * @param name         - lock's name.
-   * @param nodeId       - node's id that lock belongs to.
-   * @param checkId      - check id to which session id will get bound to.
-   * @param timeout      - time trying to obtain a lock in ms.
-   * @param vertx        - vertx instance
-   * @param consulClient - consul client instance.
+   * @param name    - lock's name.
+   * @param checkId - check id to which session id will get bound to.
+   * @param timeout - time trying to obtain a lock in ms.
+   * @param context - cluster manager context.
    */
-  public ConsulLock(String name, String nodeId, String checkId, long timeout, Vertx vertx, ConsulClient consulClient) {
-    super("__vertx.locks", nodeId, vertx, consulClient);
+  public ConsulLock(String name, String checkId, long timeout, CmContext context) {
+    super("__vertx.locks", context);
     this.lockName = name;
     this.timeout = timeout;
     this.sessionId = obtainSessionId(checkId);
@@ -60,7 +56,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return true - lock has been successfully obtained, false - otherwise.
    */
   public boolean tryObtain() {
-    log.trace("[" + nodeId + "]" + " is trying to obtain a lock on: " + lockName);
+    log.trace("[" + context.getNodeId() + "]" + " is trying to obtain a lock on: " + lockName);
     boolean lockObtained = toSync(obtain(), timeout);
     if (lockObtained) {
       log.info("Lock on: " + lockName + " has been obtained.");
@@ -85,7 +81,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return consul session id.
    */
   private String obtainSessionId(String checkId) {
-    return toSync(registerSession("Session for lock: " + lockName + " of: " + nodeId, checkId), timeout);
+    return toSync(registerSession("Session for lock: " + lockName + " of: " + context.getNodeId(), checkId), timeout);
   }
 
   /**

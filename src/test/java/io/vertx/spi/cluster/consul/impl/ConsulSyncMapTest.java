@@ -19,15 +19,14 @@ import static org.junit.Assert.*;
  */
 public class ConsulSyncMapTest {
 
-  private Vertx vertx;
-  private ConsulClient consulClient;
-  private String sessionId;
+  private CmContext cmContext = new CmContext();
 
   @Before
   public void setUp() {
-    vertx = Vertx.vertx();
-    consulClient = ConsulClient.create(vertx);
-    sessionId = getSessionId();
+    cmContext.setVertx(Vertx.vertx())
+      .setConsulClient(ConsulClient.create(Vertx.vertx()))
+      .setNodeId("testSyncMapNodeId")
+      .setEphemeralSessionId(getSessionId());
   }
 
   @Test
@@ -35,7 +34,7 @@ public class ConsulSyncMapTest {
     String k = "myKey";
     String v = "myValue";
 
-    ConsulSyncMap<String, String> syncMap = new ConsulSyncMap<>("syncMapTest", "testSyncMapNodeId", vertx, consulClient);
+    ConsulSyncMap<String, String> syncMap = new ConsulSyncMap<>("syncMapTest", cmContext);
 
     syncMap.put(k, v);
     assertFalse(syncMap.isEmpty());
@@ -66,8 +65,8 @@ public class ConsulSyncMapTest {
   @After
   public void tearDown() {
     destroySessionId();
-    vertx.close();
-    consulClient.close();
+    cmContext.getVertx().close();
+    cmContext.getConsulClient().close();
   }
 
   private String getSessionId() {
@@ -76,7 +75,7 @@ public class ConsulSyncMapTest {
       .setBehavior(SessionBehavior.DELETE)
       .setLockDelay(0) // can't specify 0 - perhaps bug in consul client implementation.
       .setName("test");
-    consulClient.createSessionWithOptions(sessionOptions, resultHandler -> {
+    cmContext.getConsulClient().createSessionWithOptions(sessionOptions, resultHandler -> {
       if (resultHandler.succeeded()) future.complete(resultHandler.result());
       else future.completeExceptionally(resultHandler.cause());
     });
@@ -92,7 +91,7 @@ public class ConsulSyncMapTest {
 
   private void destroySessionId() {
     CountDownLatch latch = new CountDownLatch(1);
-    consulClient.destroySession(sessionId, event -> latch.countDown());
+    cmContext.getConsulClient().destroySession(cmContext.getEphemeralSessionId(), event -> latch.countDown());
     try {
       latch.await(2000, TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {

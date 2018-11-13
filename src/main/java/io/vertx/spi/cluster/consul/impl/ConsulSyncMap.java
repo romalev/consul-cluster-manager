@@ -3,8 +3,6 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
-import io.vertx.ext.consul.ConsulClient;
 
 import java.util.Collection;
 import java.util.Map;
@@ -23,8 +21,8 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   private long timeout = 10000;
 
-  public ConsulSyncMap(String name, String nodeId, Vertx vx, ConsulClient cC) {
-    super(name, nodeId, vx, cC);
+  public ConsulSyncMap(String name, CmContext cmContext) {
+    super(name, cmContext);
   }
 
   @Override
@@ -56,7 +54,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   public V put(K key, V value) {
     return toSync(putValue(key, value).compose(aBoolean -> {
       if (aBoolean) return succeededFuture(value);
-      else return Future.failedFuture("[" + nodeId + "]" + " failed to put KV: " + key + " -> " + value);
+      else return Future.failedFuture("[" + context.getNodeId() + "]" + " failed to put KV: " + key + " -> " + value);
     }), timeout);
   }
 
@@ -67,7 +65,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
       else return delete((K) key).compose(aBoolean -> {
         if (aBoolean) {
           return succeededFuture(v);
-        } else return Future.failedFuture("[" + nodeId + "]" + " failed to remove an entry by K: " + key);
+        } else return Future.failedFuture("[" + context.getNodeId() + "]" + " failed to remove an entry by K: " + key);
       });
     }), timeout);
   }
