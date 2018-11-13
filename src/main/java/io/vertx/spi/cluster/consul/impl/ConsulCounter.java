@@ -34,8 +34,8 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   // key to access counter.
   private final String consulKey;
 
-  public ConsulCounter(String name, String nodeId, Vertx vertx, ConsulClient cC) {
-    super("__vertx.counters", nodeId, vertx, cC);
+  public ConsulCounter(String name, CmContext context) {
+    super("__vertx.counters", context);
     this.consulKey = keyPath(name);
   }
 

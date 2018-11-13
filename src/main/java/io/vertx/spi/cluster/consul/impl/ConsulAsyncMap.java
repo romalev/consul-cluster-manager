@@ -3,9 +3,7 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
 import io.vertx.core.shareddata.AsyncMap;
-import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValueOptions;
 
 import java.util.*;
@@ -23,8 +21,8 @@ import static io.vertx.core.Future.succeededFuture;
  */
 public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K, V> {
 
-  public ConsulAsyncMap(String name, String nodeId, Vertx vertx, ConsulClient cC) {
-    super(name, nodeId, vertx, cC);
+  public ConsulAsyncMap(String name, CmContext context) {
+    super(name, context);
   }
 
   @Override

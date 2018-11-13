@@ -17,11 +17,6 @@ public class AliceService {
   private static final Logger log = LoggerFactory.getLogger(AliceService.class);
   private static Vertx vertx;
 
-  // slf4j
-  static {
-    System.setProperty("vertx.logger-delegate-factory-class-name", "io.vertx.core.logging.SLF4JLogDelegateFactory");
-  }
-
   public static void main(String[] args) {
     log.info("Booting up the ServiceA...");
 

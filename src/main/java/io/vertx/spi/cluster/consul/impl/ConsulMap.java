@@ -1,6 +1,9 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
+import io.vertx.core.VertxException;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -21,20 +24,12 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureString;
  *
  * @author Roman Levytskyi
  */
-abstract class ConsulMap<K, V> {
+abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   private static final Logger log = LoggerFactory.getLogger(ConsulMap.class);
 
-  final String name;
-  final String nodeId;
-  final ConsulClient consulClient;
-  final Vertx vertx;
-
-  ConsulMap(String name, String nodeId, Vertx vertx, ConsulClient consulClient) {
-    this.name = name;
-    this.nodeId = nodeId;
-    this.vertx = vertx;
-    this.consulClient = consulClient;
+  ConsulMap(String name, CmContext cmContext) {
+    super(name, cmContext);
   }
 
   /**
@@ -59,7 +54,7 @@ abstract class ConsulMap<K, V> {
    */
   Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
     return assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> asFutureString(k, v, nodeId))
+      .compose(aVoid -> asFutureString(k, v, context.getNodeId()))
       .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
   }
 
@@ -73,12 +68,12 @@ abstract class ConsulMap<K, V> {
    */
   Future<Boolean> putConsulValue(String key, String value, KeyValueOptions keyValueOptions) {
     Future<Boolean> future = Future.future();
-    consulClient.putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
+    context.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
         // log.trace("[" + nodeId + "] " + key + " -> " + value + " put is " + resultHandler.result());
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -126,13 +121,13 @@ abstract class ConsulMap<K, V> {
    */
   Future<KeyValue> getConsulKeyValue(String consulKey) {
     Future<KeyValue> future = Future.future();
-    consulClient.getValue(consulKey, resultHandler -> {
+    context.getConsulClient().getValue(consulKey, resultHandler -> {
       if (resultHandler.succeeded()) {
         // note: resultHandler.result().getValue() is null if nothing was found.
         // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -144,7 +139,7 @@ abstract class ConsulMap<K, V> {
    */
   Future<Boolean> deleteConsulValue(String key) {
     Future<Boolean> result = Future.future();
-    consulClient.deleteValue(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
+    context.getConsulClient().deleteValue(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
     return result;
   }
 
@@ -153,7 +148,7 @@ abstract class ConsulMap<K, V> {
    */
   Future<Boolean> deleteConsulValues(String key) {
     Future<Boolean> result = Future.future();
-    consulClient.deleteValues(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
+    context.getConsulClient().deleteValues(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
     return result;
   }
 
@@ -162,10 +157,10 @@ abstract class ConsulMap<K, V> {
    */
   Future<Void> deleteAll() {
     Future<Void> future = Future.future();
-    consulClient.deleteValues(name, result -> {
+    context.getConsulClient().deleteValues(name, result -> {
       if (result.succeeded()) future.complete();
       else {
-        log.error("[" + nodeId + "]" + " - Failed to clear an entire: " + name);
+        log.error("[" + context.getNodeId() + "]" + " - Failed to clear an entire: " + name);
         future.fail(result.cause());
       }
     });
@@ -174,12 +169,12 @@ abstract class ConsulMap<K, V> {
 
   Future<List<String>> consulKeys() {
     Future<List<String>> futureKeys = Future.future();
-    consulClient.getKeys(name, resultHandler -> {
+    context.getConsulClient().getKeys(name, resultHandler -> {
       if (resultHandler.succeeded()) {
         // log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
         futureKeys.complete(resultHandler.result());
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
         futureKeys.fail(resultHandler.cause());
       }
     });
@@ -188,14 +183,20 @@ abstract class ConsulMap<K, V> {
 
   Future<List<KeyValue>> consulEntries() {
     Future<List<KeyValue>> keyValueListFuture = Future.future();
-    consulClient.getValues(name, resultHandler -> {
+    context.getConsulClient().getValues(name, resultHandler -> {
       if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
       else {
-        log.error("[" + nodeId + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
         keyValueListFuture.fail(resultHandler.cause());
       }
     });
     return keyValueListFuture;
+  }
+
+
+  @Override
+  protected void entryUpdated(EntryEvent event) {
+    // default map listener implementation doesn't start a watch to listen for updates.
   }
 
   /**
@@ -213,12 +214,12 @@ abstract class ConsulMap<K, V> {
       .setName(sessionName)
       .setChecks(Arrays.asList(checkId, "serfHealth"));
 
-    consulClient.createSessionWithOptions(sessionOptions, session -> {
+    context.getConsulClient().createSessionWithOptions(sessionOptions, session -> {
       if (session.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - " + sessionName + ": " + session.result() + " has been registered.");
+        log.trace("[" + context.getNodeId() + "]" + " - " + sessionName + ": " + session.result() + " has been registered.");
         future.complete(session.result());
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to register the session.", session.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to register the session.", session.cause());
         future.fail(session.cause());
       }
     });
@@ -230,12 +231,12 @@ abstract class ConsulMap<K, V> {
    */
   Future<Void> destroySession(String sessionId) {
     Future<Void> future = Future.future();
-    consulClient.destroySession(sessionId, resultHandler -> {
+    context.getConsulClient().destroySession(sessionId, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
+        log.trace("[" + context.getNodeId() + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
         future.complete();
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -256,12 +257,12 @@ abstract class ConsulMap<K, V> {
    */
   Future<String> getTtlSessionId(long ttl, K k) {
     if (ttl < 10000) {
-      log.warn("[" + nodeId + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");
+      log.warn("[" + context.getNodeId() + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");
       ttl = 10000;
     }
 
     if (ttl > 86400000) {
-      log.warn("[" + nodeId + "]" + " - Specified ttl is more that allowed in consul -> max ttl is 86400s.");
+      log.warn("[" + context.getNodeId() + "]" + " - Specified ttl is more that allowed in consul -> max ttl is 86400s.");
       ttl = 86400000;
     }
 
@@ -276,12 +277,12 @@ abstract class ConsulMap<K, V> {
       .setLockDelay(0)
       .setName(sessionName);
 
-    consulClient.createSessionWithOptions(sessionOpts, idHandler -> {
+    context.getConsulClient().createSessionWithOptions(sessionOpts, idHandler -> {
       if (idHandler.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - TTL session has been created with id: " + idHandler.result());
+        log.trace("[" + context.getNodeId() + "]" + " - TTL session has been created with id: " + idHandler.result());
         future.complete(idHandler.result());
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to create ttl consul session", idHandler.cause());
+        log.error("[" + context.getNodeId() + "]" + " - Failed to create ttl consul session", idHandler.cause());
         future.fail(idHandler.cause());
       }
     });
@@ -362,10 +363,10 @@ abstract class ConsulMap<K, V> {
    */
   private void handleDeleteResult(String key, Future<Boolean> result, AsyncResult<Void> resultHandler) {
     if (resultHandler.succeeded()) {
-      log.trace("[" + nodeId + "] " + key + " -> " + " remove is true.");
+      log.trace("[" + context.getNodeId() + "] " + key + " -> " + " remove is true.");
       result.complete(true);
     } else {
-      log.error("[" + nodeId + "]" + " - Failed to remove an entry by key: " + key, result.cause());
+      log.error("[" + context.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
       result.fail(resultHandler.cause());
     }
   }

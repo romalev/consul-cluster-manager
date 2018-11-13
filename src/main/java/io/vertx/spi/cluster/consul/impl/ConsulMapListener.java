@@ -1,13 +1,10 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.Closeable;
 import io.vertx.core.Handler;
-import io.vertx.core.VertxException;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
-import io.vertx.ext.consul.Watch;
 import io.vertx.ext.consul.WatchResult;
-import io.vertx.spi.cluster.consul.impl.ConsulKvListener.EntryEvent.EventType;
+import io.vertx.spi.cluster.consul.impl.ConsulMapListener.EntryEvent.EventType;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -19,18 +16,25 @@ import java.util.Optional;
  *
  * @author Roman Levytskyi
  */
-public interface ConsulKvListener extends Closeable {
+public abstract class ConsulMapListener {
+
+  protected final String name;
+  protected final CmContext context;
+
+  public ConsulMapListener(String name, CmContext cmContext) {
+    this.name = name;
+    this.context = cmContext;
+  }
 
   /**
    * Receives an event emitted by consul watch.
    *
    * @param event - holds the event's data.
    */
-  void entryUpdated(EntryEvent event);
+  protected abstract void entryUpdated(EntryEvent event);
 
-  default void listen(Watch<KeyValueList> watch) {
-    if (watch != null) watch.setHandler(kvWatchHandler()).start();
-    else throw new VertxException("Watch is null!");
+  protected void startListening() {
+    context.createAndGetWatch(name).setHandler(kvWatchHandler()).start();
   }
 
   /**
@@ -38,7 +42,7 @@ public interface ConsulKvListener extends Closeable {
    * <p>
    * Note: given approach provides O(n) execution time since it must loop through prev and next lists of entries.
    */
-  default Handler<WatchResult<KeyValueList>> kvWatchHandler() {
+  private Handler<WatchResult<KeyValueList>> kvWatchHandler() {
     return event -> {
       Iterator<KeyValue> nextKvIterator = getKeyValueListOrEmptyList(event.nextResult()).iterator();
       Iterator<KeyValue> prevKvIterator = getKeyValueListOrEmptyList(event.prevResult()).iterator();
@@ -83,14 +87,14 @@ public interface ConsulKvListener extends Closeable {
   /**
    * Simple not-null wrapper around getting key value list. As a result returns either an empty list or actual key value list.
    */
-  default List<KeyValue> getKeyValueListOrEmptyList(KeyValueList keyValueList) {
+  protected List<KeyValue> getKeyValueListOrEmptyList(KeyValueList keyValueList) {
     return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
   }
 
   /**
    * Represents an event that gets built out of consul watch's {@link io.vertx.ext.consul.KeyValueList}.
    */
-  final class EntryEvent {
+  protected static final class EntryEvent {
     private final EventType eventType;
     private final KeyValue entry;
 
@@ -99,16 +103,16 @@ public interface ConsulKvListener extends Closeable {
       this.entry = entry;
     }
 
-    EventType getEventType() {
+    protected EventType getEventType() {
       return eventType;
     }
 
-    public KeyValue getEntry() {
+    protected KeyValue getEntry() {
       return entry;
     }
 
     // represents an event type
-    public enum EventType {
+    enum EventType {
       WRITE,
       REMOVE
     }

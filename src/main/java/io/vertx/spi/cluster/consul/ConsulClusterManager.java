@@ -35,6 +35,9 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl.
  * <p>
  * TODO : do we really need to keep the service registered.
+ * TODO: For ha to work correctly verify:
+ * - do we need to keep the node id that belongs to the same node?
+ * - order in which watcher accepts updates from consul kv.
  *
  * @author Roman Levytskyi
  */
@@ -43,45 +46,70 @@ public class ConsulClusterManager implements ClusterManager {
   private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
   private static final String HA_INFO = "__vertx.haInfo";
   private static final String TCP_CHECK_INTERVAL = "10s";
-  private final String nodeId;
-  private final ConsulClientOptions cClOptns;
+
   private final Map<String, Lock> locks = new ConcurrentHashMap<>();
   private final Map<String, Counter> counters = new ConcurrentHashMap<>();
   private final Map<String, Map<?, ?>> syncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMap<?, ?>> asyncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
-  private ConsulClusterNodeSet nodeSet;
-  private Vertx vertx;
-  private ConsulClient cC;
+  private final CmContext cmContext = new CmContext();
+  private ClusterNodeSet nodeSet;
+
   private String checkId; // tcp consul check id
-  private String ephemeralSessionId; // consul session id used to make map entries ephemeral.
   private JsonObject nodeTcpAddress = new JsonObject();
   private NetServer netServer; // dummy TCP server to receive and acknowledge heart beats messages from consul.
+  /*
+   * Famous CAP theorem takes place here.
+   * * CP - we trade consistency against availability,
+   * * AP - we trade availability (latency) against consistency.
+   * Given cluster management SPI implementation uses internal caching of consul KV stores (pure @{link ConcurrentHashMap} acts as cache and
+   * caching is implemented on top consul watches.)
+   *
+   * Scenario: imagine we have nodes A and B in our cluster. A puts entry X to Consul KV and gets entry X cached locally.
+   * B receives ENTRY_ADDED event (which is a X entry) and caches it locally accordingly.
+   * Now imagine A removes an entry X from Consul KV and in one nanosecond later (right after remove of entry X has been acknowledged) node B queries entry X
+   * and … well it receives an entry X from local cache since local node B cache became inconsistent with Consul KV since it has not yet received and processed EVENT_REMOVED event.
+   * In order make local caching strongly consistent with Consul KV we have to check if data that is present in local cache is the same as data that is present in Consul KV.
+   *
+   * To enable dirty reads (and prefer having better latency) set {@code preferConsistency} flag to FALSE.
+   * Otherwise set {@code preferConsistency} flag to TRUE to enable stronger consistency level (i.e. disable internal caching and use consul kv store directly).
+   */
+  private boolean preferConsistency = false;
 
   private volatile boolean active;
 
   public ConsulClusterManager(final ConsulClientOptions options) {
     Objects.requireNonNull(options, "Consul client options can't be null");
-    this.cClOptns = options;
-    this.nodeId = UUID.randomUUID().toString();
-    this.checkId = nodeId;
+    cmContext
+      .setConsulClientOptions(options)
+      .setNodeId(UUID.randomUUID().toString());
+    this.checkId = cmContext.getNodeId();
   }
 
   public ConsulClusterManager() {
-    this.cClOptns = new ConsulClientOptions();
-    this.nodeId = UUID.randomUUID().toString();
-    this.checkId = nodeId;
+    cmContext
+      .setConsulClientOptions(new ConsulClientOptions())
+      .setNodeId(UUID.randomUUID().toString());
+    this.checkId = cmContext.getNodeId();
+  }
+
+  public ConsulClusterManager(final ConsulClientOptions options, final boolean preferConsistency) {
+    Objects.requireNonNull(options, "Consul client options can't be null");
+    cmContext.setConsulClientOptions(options)
+      .setNodeId(UUID.randomUUID().toString());
+    this.checkId = cmContext.getNodeId();
+    this.preferConsistency = preferConsistency;
   }
 
   @Override
   public void setVertx(Vertx vertx) {
-    this.vertx = vertx;
+    cmContext.setVertx(vertx);
   }
 
   @Override
   public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
     Future<AsyncMultiMap<K, V>> futureAsyncMultiMap = Future.future();
-    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, vertx, cC, cClOptns, ephemeralSessionId, nodeId));
+    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, preferConsistency, cmContext));
     futureAsyncMultiMap.complete(asyncMultiMap);
     futureAsyncMultiMap.setHandler(asyncResultHandler);
   }
@@ -89,20 +117,20 @@ public class ConsulClusterManager implements ClusterManager {
   @Override
   public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
     Future<AsyncMap<K, V>> futureAsyncMap = Future.future();
-    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, nodeId, vertx, cC));
+    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, cmContext));
     futureAsyncMap.complete(asyncMap);
     futureAsyncMap.setHandler(asyncResultHandler);
   }
 
   @Override
   public <K, V> Map<K, V> getSyncMap(String name) {
-    return (Map<K, V>) syncMaps.computeIfAbsent(name, key -> new ConsulSyncMap<>(name, nodeId, vertx, cC));
+    return (Map<K, V>) syncMaps.computeIfAbsent(name, key -> new ConsulSyncMap<>(name, cmContext));
   }
 
   @Override
   public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
-    vertx.executeBlocking(futureLock -> {
-      ConsulLock lock = new ConsulLock(name, nodeId, checkId, timeout, vertx, cC);
+    cmContext.getVertx().executeBlocking(futureLock -> {
+      ConsulLock lock = new ConsulLock(name, checkId, timeout, cmContext);
       boolean lockObtained = false;
       long remaining = timeout;
       do {
@@ -127,14 +155,14 @@ public class ConsulClusterManager implements ClusterManager {
   public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
     Objects.requireNonNull(name);
     Future<Counter> counterFuture = Future.future();
-    Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, nodeId, vertx, cC));
+    Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, cmContext));
     counterFuture.complete(counter);
     counterFuture.setHandler(resultHandler);
   }
 
   @Override
   public String getNodeID() {
-    return nodeId;
+    return cmContext.getNodeId();
   }
 
   @Override
@@ -146,49 +174,6 @@ public class ConsulClusterManager implements ClusterManager {
   public void nodeListener(NodeListener listener) {
     nodeSet.nodeListener(listener);
   }
-
-  @Override
-  public synchronized void join(Handler<AsyncResult<Void>> resultHandler) {
-    Future<Void> future = Future.future();
-    log.trace(nodeId + " is trying to join the cluster.");
-    if (!active) {
-      active = true;
-      try {
-        cC = ConsulClient.create(vertx, cClOptns);
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
-      } catch (final Exception e) {
-        future.fail(e);
-      }
-      doJoin().setHandler(future.completer());
-      // TODO: fallback
-    } else {
-      log.warn(nodeId + " is NOT active.");
-      future.complete();
-    }
-    future.setHandler(resultHandler);
-  }
-
-  @Override
-  public synchronized void leave(Handler<AsyncResult<Void>> resultHandler) {
-    Future<Void> resultFuture = Future.future();
-    log.trace(nodeId + " is trying to leave the cluster.");
-    if (active) {
-      active = false;
-      // forcibly release all lock being held by node.
-      locks.values().forEach(Lock::release);
-      doLeave().setHandler(resultFuture.completer());
-    } else {
-      log.warn(nodeId + "' is NOT active.");
-      resultFuture.complete();
-    }
-    resultFuture.setHandler(resultHandler);
-  }
-
-  @Override
-  public boolean isActive() {
-    return active;
-  }
-
 
   /**
    * New node joining the cluster behavior. So it does :
@@ -211,42 +196,82 @@ public class ConsulClusterManager implements ClusterManager {
    * <li>health check goes to critical state (when this.netserver doesn't acknowledge the consul's heartbeat message).</li>
    * <li>session is explicitly destroyed.</li>
    */
-  private Future<Void> doJoin() {
-    return createTcpServer()
-      .compose(aVoid -> registerService())
-      .compose(aVoid -> registerTcpCheck())
-      .compose(aVoid ->
-        registerSession("Session for ephemeral keys for: " + nodeId, SessionBehavior.DELETE)
-          .compose(s -> {
-            ephemeralSessionId = s;
-            return succeededFuture();
-          }))
-      .compose(aVoid -> {
-        nodeSet = new ConsulClusterNodeSet(nodeId, vertx, cC, cClOptns, ephemeralSessionId);
-        return succeededFuture();
-      })
-      .compose(aVoid -> {
-        Future<Void> future = Future.future();
-        ((ConsulSyncMap) getSyncMap(HA_INFO)).clear(future.completer());
-        return future;
-      })
-      .compose(aVoid -> nodeSet.add(nodeTcpAddress))
-      .compose(aVoid -> nodeSet.discover());
+  @Override
+  public synchronized void join(Handler<AsyncResult<Void>> resultHandler) {
+    Future<Void> future = Future.future();
+    log.trace(cmContext.getNodeId() + " is trying to join the cluster.");
+    if (!active) {
+      active = true;
+      cmContext.setConsulClient(ConsulClient.create(cmContext.getVertx(), cmContext.getConsulClientOptions()));
+      createTcpServer()
+        .compose(aVoid -> registerService())
+        .compose(aVoid -> registerTcpCheck())
+        .compose(aVoid ->
+          registerSession("Session for ephemeral keys for: " + cmContext.getNodeId())
+            .compose(s -> {
+              cmContext.setEphemeralSessionId(s);
+              return succeededFuture();
+            }))
+        .compose(aVoid -> {
+          nodeSet = new ClusterNodeSet(cmContext);
+          nodeSet.setActive(active);
+          return succeededFuture();
+        })
+        .compose(aVoid -> nodeSet.isEmpty())
+        .compose(isEmpty -> {
+          if (isEmpty) {
+            Future<Void> cleanFuture = Future.future();
+            log.trace("Clearing up HA_INFO since the cluster is empty");
+            ((ConsulSyncMap) getSyncMap(HA_INFO)).clear(cleanFuture.completer());
+            return cleanFuture;
+          } else return succeededFuture();
+        })
+        .compose(aVoid -> nodeSet.add(nodeTcpAddress))
+        .setHandler(nodeJoinedEvent -> {
+          if (nodeJoinedEvent.succeeded()) future.complete();
+          else {
+            // TODO: fallback
+            future.complete();
+          }
+        });
+    } else {
+      log.warn(cmContext.getNodeId() + " is NOT active.");
+      future.complete();
+    }
+    future.setHandler(resultHandler);
   }
 
   /**
    * Existing node leaving the cluster behaviour.
    */
-  private Future<Void> doLeave() {
-    netServer.close();
-    // stop watches and clear caches.
-    nodeSet.close(handler -> {
-    });
-    asyncMultiMaps.values().forEach(map -> ((Closeable) map).close(handler -> {
-    }));
-    return destroySession(ephemeralSessionId)
-      .compose(aVoid -> deregisterNode())
-      .compose(aVoid -> deregisterTcpCheck());
+  @Override
+  public synchronized void leave(Handler<AsyncResult<Void>> resultHandler) {
+    Future<Void> resultFuture = Future.future();
+    log.trace(cmContext.getNodeId() + " is trying to leave the cluster.");
+    if (active) {
+      active = false;
+      nodeSet.setActive(active);
+      // forcibly release all lock being held by node.
+      locks.values().forEach(Lock::release);
+      nodeSet.remove()
+        .compose(aVoid -> destroySession(cmContext.getEphemeralSessionId()))
+        .compose(aVoid -> deregisterNode())
+        .compose(aVoid -> deregisterTcpCheck())
+        .compose(aVoid -> {
+          netServer.close();
+          cmContext.close();
+          return Future.<Void>succeededFuture();
+        }).setHandler(resultFuture.completer());
+    } else {
+      log.warn(cmContext.getNodeId() + "' is NOT active.");
+      resultFuture.complete();
+    }
+    resultFuture.setHandler(resultHandler);
+  }
+
+  @Override
+  public boolean isActive() {
+    return active;
   }
 
 
@@ -261,7 +286,7 @@ public class ConsulClusterManager implements ClusterManager {
       log.error(e);
       future.fail(e);
     }
-    netServer = vertx.createNetServer(new NetServerOptions(nodeTcpAddress));
+    netServer = cmContext.getVertx().createNetServer(new NetServerOptions(nodeTcpAddress));
     netServer.connectHandler(event -> {
     }); // node's tcp server acknowledges consul's heartbeat message.
     netServer.listen(listenEvent -> {
@@ -279,15 +304,15 @@ public class ConsulClusterManager implements ClusterManager {
   private Future<Void> registerService() {
     Future<Void> future = Future.future();
     ServiceOptions serviceOptions = new ServiceOptions();
-    serviceOptions.setName(nodeId);
+    serviceOptions.setName(cmContext.getNodeId());
     serviceOptions.setAddress(nodeTcpAddress.getString("host"));
     serviceOptions.setPort(nodeTcpAddress.getInteger("port"));
     serviceOptions.setTags(Collections.singletonList("vertx-clustering"));
-    serviceOptions.setId(nodeId);
+    serviceOptions.setId(cmContext.getNodeId());
 
-    cC.registerService(serviceOptions, asyncResult -> {
+    cmContext.getConsulClient().registerService(serviceOptions, asyncResult -> {
       if (asyncResult.failed()) {
-        log.error("[" + nodeId + "]" + " - Failed to register node's service.", asyncResult.cause());
+        log.error("[" + cmContext.getNodeId() + "]" + " - Failed to register node's service.", asyncResult.cause());
         future.fail(asyncResult.cause());
       } else future.complete();
     });
@@ -301,44 +326,18 @@ public class ConsulClusterManager implements ClusterManager {
     Future<Void> future = Future.future();
     CheckOptions checkOptions = new CheckOptions()
       .setName(checkId)
-      .setNotes("This check is dedicated to service with id: " + nodeId)
+      .setNotes("This check is dedicated to service with id: " + cmContext.getNodeId())
       .setId(checkId)
       .setTcp(nodeTcpAddress.getString("host") + ":" + nodeTcpAddress.getInteger("port"))
-      .setServiceId(nodeId)
+      .setServiceId(cmContext.getNodeId())
       .setInterval(TCP_CHECK_INTERVAL)
       .setDeregisterAfter("10s") // it is still going to be 1 minute.
       .setStatus(CheckStatus.PASSING);
-    cC.registerCheck(checkOptions, result -> {
+    cmContext.getConsulClient().registerCheck(checkOptions, result -> {
       if (result.failed()) {
-        log.error("[" + nodeId + "]" + " - Failed to register check: " + checkOptions.getId(), result.cause());
+        log.error("[" + cmContext.getNodeId() + "]" + " - Failed to register check: " + checkOptions.getId(), result.cause());
         future.fail(result.cause());
       } else future.complete();
-    });
-    return future;
-  }
-
-  /**
-   * Creates consul session. Consul session is used (in context of vertx cluster manager) to create ephemeral map entries.
-   *
-   * @param sessionName - session name.
-   * @return session id.
-   */
-  private Future<String> registerSession(String sessionName, SessionBehavior sessionBehavior) {
-    Future<String> future = Future.future();
-    SessionOptions sessionOptions = new SessionOptions()
-      .setBehavior(sessionBehavior)
-      .setLockDelay(0)
-      .setName(sessionName)
-      .setChecks(Arrays.asList(checkId, "serfHealth"));
-
-    cC.createSessionWithOptions(sessionOptions, session -> {
-      if (session.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - " + sessionName + ": " + session.result() + " has been registered for .");
-        future.complete(session.result());
-      } else {
-        log.error("[" + nodeId + "]" + " - Failed to register the session.", session.cause());
-        future.fail(session.cause());
-      }
     });
     return future;
   }
@@ -350,9 +349,9 @@ public class ConsulClusterManager implements ClusterManager {
    */
   private Future<Void> deregisterNode() {
     Future<Void> future = Future.future();
-    cC.deregisterService(nodeId, event -> {
+    cmContext.getConsulClient().deregisterService(cmContext.getNodeId(), event -> {
       if (event.failed()) {
-        log.error("[" + nodeId + "]" + " - Failed to unregister node.", event.cause());
+        log.error("[" + cmContext.getNodeId() + "]" + " - Failed to unregister node.", event.cause());
         future.fail(event.cause());
       } else future.complete();
     });
@@ -364,11 +363,37 @@ public class ConsulClusterManager implements ClusterManager {
    */
   private Future<Void> deregisterTcpCheck() {
     Future<Void> future = Future.future();
-    cC.deregisterCheck(checkId, resultHandler -> {
+    cmContext.getConsulClient().deregisterCheck(checkId, resultHandler -> {
       if (resultHandler.succeeded()) future.complete();
       else {
-        log.error("[" + nodeId + "]" + " - Failed to deregister check: " + checkId, resultHandler.cause());
+        log.error("[" + cmContext.getNodeId() + "]" + " - Failed to deregister check: " + checkId, resultHandler.cause());
         future.fail(resultHandler.cause());
+      }
+    });
+    return future;
+  }
+
+  /**
+   * Creates consul session. Consul session is used (in context of vertx cluster manager) to create ephemeral map entries.
+   *
+   * @param sessionName - session name.
+   * @return session id.
+   */
+  private Future<String> registerSession(String sessionName) {
+    Future<String> future = Future.future();
+    SessionOptions sessionOptions = new SessionOptions()
+      .setBehavior(SessionBehavior.DELETE)
+      .setLockDelay(0)
+      .setName(sessionName)
+      .setChecks(Arrays.asList(checkId, "serfHealth"));
+
+    cmContext.getConsulClient().createSessionWithOptions(sessionOptions, session -> {
+      if (session.succeeded()) {
+        log.trace("[" + cmContext.getNodeId() + "]" + " - " + sessionName + ": " + session.result() + " has been registered for .");
+        future.complete(session.result());
+      } else {
+        log.error("[" + cmContext.getNodeId() + "]" + " - Failed to register the session.", session.cause());
+        future.fail(session.cause());
       }
     });
     return future;
@@ -379,12 +404,12 @@ public class ConsulClusterManager implements ClusterManager {
    */
   Future<Void> destroySession(String sessionId) {
     Future<Void> future = Future.future();
-    cC.destroySession(sessionId, resultHandler -> {
+    cmContext.getConsulClient().destroySession(sessionId, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + nodeId + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
+        log.trace("[" + cmContext.getNodeId() + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
         future.complete();
       } else {
-        log.error("[" + nodeId + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
+        log.error("[" + cmContext.getNodeId() + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });

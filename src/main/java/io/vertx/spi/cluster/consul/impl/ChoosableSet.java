@@ -13,6 +13,7 @@ import java.util.Set;
  */
 public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
 
+  private volatile boolean initialised;
   private final Set<T> ids;
   private volatile Iterator<T> iter;
 
@@ -32,8 +33,8 @@ public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
     ids.add(elem);
   }
 
-  public void remove(T elem) {
-    ids.remove(elem);
+  public boolean remove(T elem) {
+    return ids.remove(elem);
   }
 
   public void merge(Set<T> toMerge) {
@@ -46,6 +47,14 @@ public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
 
   public boolean contains(T elem) {
     return ids.contains(elem);
+  }
+
+  public boolean isInitialised() {
+    return initialised;
+  }
+
+  public void setInitialised() {
+    this.initialised = true;
   }
 
   @Override
