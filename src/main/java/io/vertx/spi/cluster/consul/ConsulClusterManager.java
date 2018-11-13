@@ -176,25 +176,27 @@ public class ConsulClusterManager implements ClusterManager {
   }
 
   /**
-   * New node joining the cluster behavior. So it does :
+   * For new node to join the cluster we perform:
    * <p>
-   * - Node registration within the cluster. Every new consul service and new entry within __vertx.nodes represent actual vertx node.
-   * Don't confuse vertx node with consul (native) node - these are completely different things.
-   * Note: every vetx node that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".
+   * - We create {@link ConsulClient} instance and save it to internal {@link CmContext}
    * <p>
-   * - Cluster nodes discovery. New node while joining the cluster discovers available nodes - it looks up all entry withing __vertx.nodes.
+   * - We register consul service in consul agent. Every new consul service and new entry within "__vertx.nodes" represent actual vertx node.
+   * Note: every vetx node that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".Don't confuse vertx node with consul (native) node - these are completely different things.
    * <p>
-   * - Creating dummy TCP server to receive and acknowledge heart beats messages from consul.
+   * - We create dummy TCP server to able to receive and acknowledge heart beats messages from consul.
    * <p>
-   * - Creating TCP check on the consul side that sends heart beats messages to previously mentioned tcp server - this allow consul agent to be aware of
-   * what is going on within the cluster's nodes (node is active if it acknowledges hear beat message, inactive - otherwise.)
+   * - We create TCP check (and get it registered within consul agent) to let consul agent sends heart beats messages to previously mentioned tcp server.
+   * This allow consul agent to be aware of what is going on within the cluster: node is active if it acknowledges hear beat message, inactive - otherwise.
+   * {@code TCP_CHECK_INTERVAL} holds actual interval for which consul agent will be sending heart beat messages to vert.x nodes.
    * <p>
-   * - Creating consul session. Consul session is used to make consul map entries ephemeral (every entry with that is created with special KV options referencing session id gets automatically deleted
+   * - We create session in consul agent. Session's id is used later on to make consul map entries ephemeral (every entry that gets created with special {@link KeyValueOptions} holding this session id gets automatically deleted
    * from the consul cluster once session gets invalidated).
    * In this cluster manager case session will get invalidated when:
    * <li>health check gets unregistered.</li>
-   * <li>health check goes to critical state (when this.netserver doesn't acknowledge the consul's heartbeat message).</li>
+   * <li>health check falls into critical state {@link CheckStatus} - this happens when our dummy TCP server doesn't acknowledge the consul's heartbeat message).</li>
    * <li>session is explicitly destroyed.</li>
+   * <p>
+   * - We create {@link ClusterNodeSet} instance. TODO:
    */
   @Override
   public synchronized void join(Handler<AsyncResult<Void>> resultHandler) {
@@ -242,7 +244,7 @@ public class ConsulClusterManager implements ClusterManager {
   }
 
   /**
-   * Existing node leaving the cluster behaviour.
+   * This describers what happens when existing node leaves the cluster.
    */
   @Override
   public synchronized void leave(Handler<AsyncResult<Void>> resultHandler) {
@@ -274,9 +276,8 @@ public class ConsulClusterManager implements ClusterManager {
     return active;
   }
 
-
   /**
-   * Creates simple tcp server used to receive heart beat messages from consul cluster and acknowledge them.
+   * Creates simple tcp server used to receive heart beat messages from consul agent and acknowledge them.
    */
   private Future<Void> createTcpServer() {
     Future<Void> future = Future.future();
@@ -300,6 +301,7 @@ public class ConsulClusterManager implements ClusterManager {
 
   /**
    * Gets the vertx node's dedicated service registered within consul agent.
+   * TODO: this might get changed.
    */
   private Future<Void> registerService() {
     Future<Void> future = Future.future();
