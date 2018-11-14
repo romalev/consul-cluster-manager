@@ -18,9 +18,10 @@ public class ConsulAgent {
     this.port = getFreePort();
   }
 
-  public void start() {
+  public int start() {
     consul = ConsulStarterBuilder.consulStarter().withHttpPort(port).build().start();
     log.info("Consul test agent is up and running on port: " + port);
+    return port;
   }
 
   public void stop() {
