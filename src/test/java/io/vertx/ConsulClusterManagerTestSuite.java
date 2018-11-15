@@ -17,13 +17,17 @@ import org.junit.runners.Suite;
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-  ConsulApMultiMapTest.class,
-  ConsulCpMultiMapTest.class,
-  ConsulSyncMapTest.class,
+  // SHARED DATA
+  ConsulAsyncApBaseMultiMapTest.class,
+  ConsulAsyncCpBaseMultiMapTest.class,
   ConsulClusteredAsyncMapTest.class,
   ConsulClusteredAsynchronousLockTest.class,
   ConsulClusteredSharedCounterTest.class,
+  // SYNC MAP
+  ConsulSyncMapTest.class,
+  // ROUND ROBIN
   ConsumerRoundRobinTest.class,
+  // EVENT BUS
   ConsulCpClusteredEventBusTest.class,
   // TODO: get tests below done!
   // ConsulApClusteredEventBusTest.class,

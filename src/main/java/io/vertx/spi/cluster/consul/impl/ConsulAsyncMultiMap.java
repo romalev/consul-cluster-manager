@@ -4,7 +4,6 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo;
 import io.vertx.core.impl.TaskQueue;
 import io.vertx.core.impl.VertxInternal;
 import io.vertx.core.json.Json;
@@ -16,7 +15,10 @@ import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.KeyValueOptions;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
@@ -79,16 +81,26 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   @Override
   public void add(K k, V v, Handler<AsyncResult<Void>> completionHandler) {
     assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> doGet(k))
-      .compose(vs -> doPut(k, vs.getIds(), v))
+      .compose(aVoid -> getAllByKey(keyPathForAllByAddressAndByNodeId(k, context.getNodeId())))
+      .compose(vs -> doAdd(k, v, vs))
       .setHandler(completionHandler);
   }
 
   @Override
   public void remove(K k, V v, Handler<AsyncResult<Boolean>> completionHandler) {
     assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> doGet(k))
-      .compose(vs -> delete(k, v, vs))
+      .compose(aVoid -> getAll(keyPathForAllByAddress(k)))
+      .compose(consulEntries -> {
+        List<Future> futures = new ArrayList<>();
+        consulEntries.forEach(consulEntry -> futures.add(delete(consulEntry.getKey(), v, toChoosableSet(consulEntry.getValue()), consulEntry.getNodeId())));
+        return CompositeFuture.all(futures).map(compositeFuture -> {
+          for (int i = 0; i < compositeFuture.size(); i++) {
+            boolean resAt = compositeFuture.resultAt(i);
+            if (!resAt) return false;
+          }
+          return true;
+        });
+      })
       .setHandler(completionHandler);
   }
 
@@ -99,16 +111,15 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   @Override
   public void removeAllMatching(Predicate<V> p, Handler<AsyncResult<Void>> completionHandler) {
-    getEntriesFromConsulKv(Optional.empty())
+    getAll(keyPathForAll())
       .compose(consulEntries -> {
         List<Future> futures = new ArrayList<>();
-        consulEntries.forEach(kSetConsulEntry -> {
-          kSetConsulEntry.getValue().forEach(v -> {
+        consulEntries.forEach(consulEntry ->
+          consulEntry.getValue().forEach(v -> {
             if (p.test(v)) {
-              futures.add(delete(kSetConsulEntry.getKey(), v, toChoosableSet(kSetConsulEntry.getValue())));
+              futures.add(delete(consulEntry.getKey(), v, toChoosableSet(consulEntry.getValue()), consulEntry.getNodeId()));
             }
-          });
-        });
+          }));
         return CompositeFuture.all(futures).compose(compositeFuture -> Future.<Void>succeededFuture());
       }).setHandler(completionHandler);
   }
@@ -121,13 +132,20 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       .setHandler(resultHandler);
   }
 
-
-  private Future<Void> doPut(K k, Set<V> subs, V sub) {
-    return preferConsistency ? nonCacheablePut(k, subs, sub) : cacheablePut(k, subs, sub);
+  /**
+   * Puts an entry to consul kv store.
+   *
+   * @param k       represents key of the entry (i.e. event bus address).
+   * @param v       represents value of the entry (i.e. location of event bus subscribers).
+   * @param entries holds entries to which the new entries will be added, these entries have to be queried first.
+   * @return {@link Future}
+   */
+  private Future<Void> doAdd(K k, V v, Set<V> entries) {
+    return preferConsistency ? nonCacheableAdd(k, entries, v) : cacheableAdd(k, entries, v);
   }
 
-  private Future<Void> cacheablePut(K k, Set<V> subs, V sub) {
-    return nonCacheablePut(k, subs, sub)
+  private Future<Void> cacheableAdd(K k, Set<V> entries, V sub) {
+    return nonCacheableAdd(k, entries, sub)
       .compose(aVoid -> {
         addEntryToCache(k, sub);
         return succeededFuture();
@@ -135,16 +153,16 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   }
 
-  private Future<Void> nonCacheablePut(K k, Set<V> subs, V sub) {
+  private Future<Void> nonCacheableAdd(K k, Set<V> subs, V sub) {
     Set<V> newOne = new HashSet<>(subs);
     newOne.add(sub);
-    return putToConsulKv(k, newOne, context.getNodeId())
+    return addToConsulKv(k, newOne, context.getNodeId())
       .compose(aBoolean -> aBoolean ? succeededFuture() : failedFuture(sub.toString() + ": wasn't added to: " + name));
   }
 
-  private Future<Boolean> putToConsulKv(K key, Set<V> vs, String _nodeId) {
-    return asFutureString(key, vs, _nodeId)
-      .compose(encodedValue -> putConsulValue(keyPath(key.toString(), _nodeId), encodedValue, kvOpts));
+  private Future<Boolean> addToConsulKv(K key, Set<V> vs, String nodeId) {
+    return asFutureString(key, vs, nodeId)
+      .compose(encodedValue -> putConsulValue(keyPathForAllByAddressAndByNodeId(key, nodeId), encodedValue, kvOpts));
   }
 
   /*
@@ -158,7 +176,8 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     Future<ChoosableSet<V>> out = Future.future();
     VertxInternal vertxInternal = (VertxInternal) context.getVertx();
     vertxInternal.getOrCreateContext().<ChoosableSet<V>>executeBlocking(event -> {
-      Future<ChoosableSet<V>> future = preferConsistency ? nonCacheableGet(key) : cacheableGet(key);
+      Future<ChoosableSet<V>> future = preferConsistency
+        ? nonCacheableGet(key) : cacheableGet(key);
       ChoosableSet<V> choosableSet = toSync(future, 5000);
       event.complete(choosableSet);
     }, taskQueue, res -> out.complete(res.result()));
@@ -175,25 +194,24 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   }
 
   private Future<ChoosableSet<V>> nonCacheableGet(K key) {
-    return getEntriesByKey(key.toString()).compose(vs -> succeededFuture(toChoosableSet(vs)));
+    return getAllByKey(keyPathForAllByAddress(key)).compose(vs -> succeededFuture(toChoosableSet(vs)));
   }
 
-  private Future<Set<V>> getEntriesByKey(String eventBusAddress) {
-    return getEntriesFromConsulKv(Optional.of(eventBusAddress))
-      .compose(entries -> succeededFuture(entries
-        .stream()
-        .map(ConsulEntry::getValue)
-        .flatMap(Set::stream)
-        .collect(Collectors.toSet())));
+  /**
+   * Deletes then entry from consul kv store.
+   *
+   * @param key    represents key of the entry (i.e. event bus address).
+   * @param value  represents value of the entry (i.e. location of event bus subscriber).
+   * @param from   holds {@link ChoosableSet} of entries from which the entry will get an attempt to be removed, those have to be queried first.
+   * @param nodeId represents node id that the entry belongs to.
+   * @return {@link Future}
+   */
+  private Future<Boolean> delete(K key, V value, ChoosableSet<V> from, String nodeId) {
+    return preferConsistency ? nonCacheableDelete(key, value, from, nodeId) : cacheableDelete(key, value, from, nodeId);
   }
 
-
-  private Future<Boolean> delete(K key, V value, ChoosableSet<V> from) {
-    return preferConsistency ? nonCacheableDelete(key, value, from) : cacheableDelete(key, value, from);
-  }
-
-  private Future<Boolean> cacheableDelete(K key, V value, ChoosableSet<V> from) {
-    return nonCacheableDelete(key, value, from)
+  private Future<Boolean> cacheableDelete(K key, V value, ChoosableSet<V> from, String nodeId) {
+    return nonCacheableDelete(key, value, from, nodeId)
       .compose(aBoolean -> {
         if (aBoolean) {
           removeEntryFromCache(key, value);
@@ -202,51 +220,53 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       });
   }
 
-  private Future<Boolean> nonCacheableDelete(K key, V value, ChoosableSet<V> from) {
-    Optional<String> clusterNodeId = getClusterNodeId(value);
-    if (clusterNodeId.isPresent()) {
-      if (from.remove(value)) {
-        if (from.isEmpty()) {
-          return deleteConsulValue(keyPath(key.toString(), clusterNodeId.get()));
-        } else {
-          return putToConsulKv(key, toHashSet(from), clusterNodeId.get());
-        }
-      } else {
-        return Future.succeededFuture(false);
-      }
+  private Future<Boolean> nonCacheableDelete(K key, V value, ChoosableSet<V> from, String nodeId) {
+    if (from.remove(value)) {
+      if (from.isEmpty()) return deleteConsulValue(keyPathForAllByAddressAndByNodeId(key, nodeId));
+      else return addToConsulKv(key, toHashSet(from), nodeId);
     } else {
-      // We're here entering a complicated scenario since actual Value is not type of {@link ClusterNodeInfo}
-      // which means we can't extract node id that given Value belongs to.
-      // Normally this should NOT HAPPEN in production code due to the fact {@link EventBus} operates ONLY AND ONLY with {@link ClusterNodeInfo}
-      // So it's only done to satisfy TCK
-      return getEntriesFromConsulKv(Optional.of(key.toString())).compose(consulEntries -> {
-        List<Future> futures = new ArrayList<>();
-        consulEntries.forEach(kSetConsulEntry -> {
-          Set<V> subs = kSetConsulEntry.getValue();
-          boolean removed = subs.remove(value);
-          if (removed) {
-            if (subs.isEmpty()) {
-              futures.add(deleteConsulValue(keyPath(key.toString(), kSetConsulEntry.getNodeId())));
-            } else {
-              futures.add(putToConsulKv(key, subs, kSetConsulEntry.getNodeId()));
-            }
-          } else {
-            futures.add(succeededFuture(false));
-          }
-        });
-        return CompositeFuture.all(futures).map(compositeFuture -> {
-          for (int i = 0; i < compositeFuture.size(); i++) {
-            boolean resultAt = compositeFuture.resultAt(i);
-            if (!resultAt) return false;
-          }
-          return true;
-        });
-      });
+      return Future.succeededFuture(false);
     }
   }
 
-  private Future<Set<ConsulEntry<K, Set<V>>>> getEntriesFromConsulKv(Optional<String> address) {
-    String consulKey = address.map(this::keyPath).orElse(name);
+  /**
+   * Returns a consul key path used to fetch all entries (all subscribers of all event buses that are registered).
+   */
+  private String keyPathForAll() {
+    return name;
+  }
+
+  /**
+   * Returns a consul key path used to fetch all entries filtered by key (all subscribers of specified event bus address).
+   */
+  private String keyPathForAllByAddress(K key) {
+    return name + "/" + key.toString();
+  }
+
+  /**
+   * Returns a consul key path used to fetch all entries filtered by key and by node id (all subscribers of specified event bus address
+   * that belongs to specified node).
+   */
+  private String keyPathForAllByAddressAndByNodeId(K key, String nodeId) {
+    return name + "/" + key.toString() + "/" + nodeId;
+  }
+
+  /**
+   * Returns {@link Set} of all entries filtered by specified consul key path.
+   */
+  private Future<Set<V>> getAllByKey(String consulKeyPath) {
+    return getAll(consulKeyPath)
+      .compose(entries -> succeededFuture(entries
+        .stream()
+        .map(ConsulEntry::getValue)
+        .flatMap(Set::stream)
+        .collect(Collectors.toSet())));
+  }
+
+  /**
+   * Returns an set of an internal {@link ConsulEntry} all entries filtered by specified consul key path.
+   */
+  private Future<Set<ConsulEntry<K, Set<V>>>> getAll(String consulKey) {
     Future<KeyValueList> future = Future.future();
     context.getConsulClient().getValues(consulKey, future.completer());
 
@@ -255,7 +275,10 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       List<Future> futures = new ArrayList<>();
       keyValues
         .stream()
-        .filter(keyValue -> name.equals(consulKey) || extractKey(keyValue.getKey()).equals(consulKey))
+        .filter(
+          keyValue ->
+            (consulKey.equals(name)) || keyValue.getKey().equals(consulKey) || getRidOfNodeId(keyValue.getKey()).equals(consulKey)
+        )
         .forEach(keyValue -> futures.add(asFutureConsulEntry(keyValue.getValue())));
 
       return CompositeFuture.all(futures).map(compositeFuture -> {
@@ -268,6 +291,10 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     });
   }
 
+  private static String getRidOfNodeId(String consulKeyPath) {
+    return consulKeyPath.substring(0, consulKeyPath.lastIndexOf("/"));
+  }
+
   private ChoosableSet<V> toChoosableSet(Set<V> set) {
     ChoosableSet<V> choosableSet = new ChoosableSet<>(set.size());
     set.forEach(choosableSet::add);
@@ -278,28 +305,6 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     Set<V> hashSet = new HashSet<>(set.size());
     set.forEach(hashSet::add);
     return hashSet;
-  }
-
-  // builds the key used to access particular subscriber - i.e. __vertx.subs/@address/@nodeId
-  private String keyPath(String address, String _nodeId) {
-    return name + "/" + address + "/" + _nodeId;
-  }
-
-  // builds the key to access all subscribers by specific address - i.e. __vertx.subs/@address
-  private String keyPath(String address) {
-    return name + "/" + address;
-  }
-
-
-  private String extractKey(String multimapKey) {
-    return multimapKey.substring(0, multimapKey.lastIndexOf("/"));
-  }
-
-  /**
-   * Gets node id out of {@link ClusterNodeInfo} if value is instance of {@link ClusterNodeInfo}.
-   */
-  private Optional<String> getClusterNodeId(V val) {
-    return val.getClass() == ClusterNodeInfo.class ? Optional.of(((ClusterNodeInfo) val).nodeId) : Optional.empty();
   }
 
   private void addEntryToCache(K key, V value) {
