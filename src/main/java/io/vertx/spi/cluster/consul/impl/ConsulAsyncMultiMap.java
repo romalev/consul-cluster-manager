@@ -240,7 +240,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    * Returns a consul key path used to fetch all entries filtered by key (all subscribers of specified event bus address).
    */
   private String keyPathForAllByAddress(K key) {
-    return name + "/" + key.toString();
+    return keyPathForAll() + "/" + key.toString();
   }
 
   /**
@@ -248,7 +248,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    * that belongs to specified node).
    */
   private String keyPathForAllByAddressAndByNodeId(K key, String nodeId) {
-    return name + "/" + key.toString() + "/" + nodeId;
+    return keyPathForAllByAddress(key) + "/" + nodeId;
   }
 
   /**

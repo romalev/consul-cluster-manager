@@ -1,5 +1,6 @@
 package io.vertx;
 
+import io.vertx.core.eventbus.ConsulApClusteredEventBusTest;
 import io.vertx.core.eventbus.ConsulCpClusteredEventBusTest;
 import io.vertx.core.shareddata.*;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMapTest;
@@ -29,11 +30,11 @@ import org.junit.runners.Suite;
   ConsumerRoundRobinTest.class,
   // EVENT BUS
   ConsulCpClusteredEventBusTest.class,
+  ConsulApClusteredEventBusTest.class,
   // TODO: get tests below done!
-  // ConsulApClusteredEventBusTest.class,
+  // ConsulFaultToleranceTest.class,
   // ConsulClusteredHATest.class,
   // ConsulClusteredComplexHATest.class,
-  // ConsulFaultToleranceTest.class,
   // ConsulClusteredSessionHandlerTest.class
 
 })

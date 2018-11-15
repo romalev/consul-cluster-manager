@@ -1,7 +1,7 @@
 # Consul cluster manager for Vert.x ecosystem #
 
 [![Build Status](https://travis-ci.com/romalev/vertx-consul-cluster-manager.svg?branch=master)](https://travis-ci.com/romalev/vertx-consul-cluster-manager)
-
+[![codecov](https://codecov.io/gh/romalev/vertx-consul-cluster-manager/branch/master/graph/badge.svg)](https://codecov.io/gh/romalev/vertx-consul-cluster-manager)
 
 **Introduction**
 -
