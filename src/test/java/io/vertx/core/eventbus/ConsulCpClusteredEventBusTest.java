@@ -7,6 +7,10 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
+/**
+ * Tests {@link io.vertx.core.eventbus.impl.clustered.ClusteredEventBus}
+ * Caching is disabled in {@link io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap}
+ */
 public class ConsulCpClusteredEventBusTest extends ClusteredEventBusTest {
 
   private static int port;

@@ -7,7 +7,7 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
-public class ConsulApMultiMapTest extends ConsulAsyncMultiMapTest {
+public class ConsulAsyncCpBaseMultiMapTest extends ConsulAsyncBaseMultiMapTest {
 
   private static int port;
 
@@ -26,6 +26,6 @@ public class ConsulApMultiMapTest extends ConsulAsyncMultiMapTest {
     ConsulClientOptions options = new ConsulClientOptions()
       .setPort(port)
       .setHost("localhost");
-    return new ConsulClusterManager(options, false);
+    return new ConsulClusterManager(options, true);
   }
 }
