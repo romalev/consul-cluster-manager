@@ -1,6 +1,5 @@
 package io.vertx.spi.cluster.consul.impl;
 
-import io.vertx.core.AsyncResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.VertxException;
@@ -28,8 +27,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   private static final Logger log = LoggerFactory.getLogger(ConsulMap.class);
 
-  ConsulMap(String name, CmContext cmContext) {
-    super(name, cmContext);
+  ConsulMap(String name, ConfigContext configContext) {
+    super(name, configContext);
   }
 
   /**
@@ -70,11 +69,17 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
     Future<Boolean> future = Future.future();
     context.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
-        // log.trace("[" + nodeId + "] " + key + " -> " + value + " put is " + resultHandler.result());
+        log.trace("[" + context.getNodeId() + "] " + key + " put is " + resultHandler.result());
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
-        future.fail(resultHandler.cause());
+        context.reInitConsulClient();
+        putConsulValue(key, value, keyValueOptions).setHandler(innerHandler -> {
+          if (resultHandler.succeeded()) future.complete(innerHandler.result());
+          else {
+            log.error("[" + context.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
+            future.fail(resultHandler.cause());
+          }
+        });
       }
     });
     return future;
@@ -127,8 +132,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
         // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
-        future.fail(resultHandler.cause());
+        context.reInitConsulClient();
+        getConsulKeyValue(consulKey).setHandler(res -> {
+          if (res.succeeded()) future.complete(res.result());
+          else {
+            log.error("[" + context.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
+            future.fail(resultHandler.cause());
+          }
+        });
       }
     });
     return future;
@@ -139,16 +150,21 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   Future<Boolean> deleteConsulValue(String key) {
     Future<Boolean> result = Future.future();
-    context.getConsulClient().deleteValue(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
-    return result;
-  }
-
-  /**
-   * Removes all the key/value pair that corresponding to the specified key prefix.
-   */
-  Future<Boolean> deleteConsulValues(String key) {
-    Future<Boolean> result = Future.future();
-    context.getConsulClient().deleteValues(key, resultHandler -> handleDeleteResult(key, result, resultHandler));
+    context.getConsulClient().deleteValue(key, resultHandler -> {
+      if (resultHandler.succeeded()) {
+        log.trace("[" + context.getNodeId() + "] " + key + " -> " + " remove is true.");
+        result.complete(true);
+      } else {
+        context.reInitConsulClient();
+        deleteConsulValue(key).setHandler(res -> {
+          if (res.succeeded()) result.complete(true);
+          else {
+            log.error("[" + context.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
+            result.fail(resultHandler.cause());
+          }
+        });
+      }
+    });
     return result;
   }
 
@@ -174,8 +190,16 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
         // log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
         futureKeys.complete(resultHandler.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
-        futureKeys.fail(resultHandler.cause());
+        context.reInitConsulClient();
+        consulKeys().setHandler(event -> {
+          if (event.succeeded()) {
+            futureKeys.complete(event.result());
+          } else {
+            log.error("[" + context.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
+            futureKeys.fail(resultHandler.cause());
+          }
+        });
+
       }
     });
     return futureKeys;
@@ -186,8 +210,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
     context.getConsulClient().getValues(name, resultHandler -> {
       if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
       else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
-        keyValueListFuture.fail(resultHandler.cause());
+        context.reInitConsulClient();
+        consulEntries().setHandler(event -> {
+          if (event.succeeded()) keyValueListFuture.complete(event.result());
+          else {
+            log.error("[" + context.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
+            keyValueListFuture.fail(resultHandler.cause());
+          }
+        });
       }
     });
     return keyValueListFuture;
@@ -299,7 +329,7 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @param <T>     - result type.
    * @return computation result.
    */
-  <T> T toSync(Future<T> future, long timeout) {
+  <T> T completeAndGet(Future<T> future, long timeout) {
     CompletableFuture<T> completableFuture = new CompletableFuture<>();
     future.setHandler(event -> {
       if (event.succeeded()) completableFuture.complete(event.result());
@@ -356,19 +386,6 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
     return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
-  }
-
-  /**
-   * Handles result of remove operation.
-   */
-  private void handleDeleteResult(String key, Future<Boolean> result, AsyncResult<Void> resultHandler) {
-    if (resultHandler.succeeded()) {
-      log.trace("[" + context.getNodeId() + "] " + key + " -> " + " remove is true.");
-      result.complete(true);
-    } else {
-      log.error("[" + context.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
-      result.fail(resultHandler.cause());
-    }
   }
 
 }

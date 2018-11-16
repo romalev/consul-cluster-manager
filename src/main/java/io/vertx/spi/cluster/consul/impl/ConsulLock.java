@@ -42,7 +42,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @param timeout - time trying to obtain a lock in ms.
    * @param context - cluster manager context.
    */
-  public ConsulLock(String name, String checkId, long timeout, CmContext context) {
+  public ConsulLock(String name, String checkId, long timeout, ConfigContext context) {
     super("__vertx.locks", context);
     this.lockName = name;
     this.timeout = timeout;
@@ -57,7 +57,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    */
   public boolean tryObtain() {
     log.trace("[" + context.getNodeId() + "]" + " is trying to obtain a lock on: " + lockName);
-    boolean lockObtained = toSync(obtain(), timeout);
+    boolean lockObtained = completeAndGet(obtain(), timeout);
     if (lockObtained) {
       log.info("Lock on: " + lockName + " has been obtained.");
     }
@@ -81,7 +81,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return consul session id.
    */
   private String obtainSessionId(String checkId) {
-    return toSync(registerSession("Session for lock: " + lockName + " of: " + context.getNodeId(), checkId), timeout);
+    return completeAndGet(registerSession("Session for lock: " + lockName + " of: " + context.getNodeId(), checkId), timeout);
   }
 
   /**

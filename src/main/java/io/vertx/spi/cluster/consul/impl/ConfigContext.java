@@ -8,69 +8,86 @@ import io.vertx.ext.consul.Watch;
 
 import java.util.Objects;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Cluster manager context.
+ * Consul map context.
  *
  * @author Roman Levytskyi
  */
-public final class CmContext {
+public final class ConfigContext implements AutoCloseable {
 
   private String nodeId;
   private Vertx vertx;
   private ConsulClient consulClient;
   private ConsulClientOptions consulClientOptions;
   private String ephemeralSessionId; // consul session id used to make map entries ephemeral.
-  private Queue<Watch<KeyValueList>> watchQueue = new ConcurrentLinkedDeque<>();
+  // TODO: do we really need ConcurrentLinkedQueue?
+  private Queue<Watch<KeyValueList>> watchQueue = new ConcurrentLinkedQueue<>();
 
-  public CmContext setVertx(Vertx vertx) {
+  public ConfigContext setVertx(Vertx vertx) {
     Objects.requireNonNull(vertx);
     this.vertx = vertx;
     return this;
   }
 
-  public CmContext setConsulClient(ConsulClient consulClient) {
-    Objects.requireNonNull(consulClient);
-    this.consulClient = consulClient;
+  public ConfigContext initConsulClient() {
+    Objects.requireNonNull(vertx);
+    Objects.requireNonNull(consulClientOptions);
+    this.consulClient = ConsulClient.create(vertx, consulClientOptions);
     return this;
   }
 
-  public CmContext setNodeId(String nodeId) {
+  public ConfigContext reInitConsulClient() {
+    Objects.requireNonNull(consulClient);
+    try {
+      consulClient.close();
+    } catch (IllegalStateException e) {
+
+    }
+    return initConsulClient();
+  }
+
+  public ConfigContext setNodeId(String nodeId) {
     Objects.requireNonNull(nodeId);
     this.nodeId = nodeId;
     return this;
   }
 
-  public CmContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
+  public ConfigContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
     Objects.requireNonNull(consulClientOptions);
     this.consulClientOptions = consulClientOptions;
     return this;
   }
 
-  public CmContext setEphemeralSessionId(String sessionId) {
+  public ConfigContext setEphemeralSessionId(String sessionId) {
     Objects.requireNonNull(sessionId);
     this.ephemeralSessionId = sessionId;
     return this;
   }
 
   public String getNodeId() {
+    Objects.requireNonNull(nodeId);
     return nodeId;
   }
 
   public Vertx getVertx() {
+    Objects.requireNonNull(vertx);
     return vertx;
   }
 
   public ConsulClient getConsulClient() {
+    Objects.requireNonNull(consulClient);
     return consulClient;
   }
 
   public ConsulClientOptions getConsulClientOptions() {
+    Objects.requireNonNull(consulClientOptions);
     return consulClientOptions;
   }
 
   public String getEphemeralSessionId() {
+    Objects.requireNonNull(ephemeralSessionId);
     return ephemeralSessionId;
   }
 
@@ -83,7 +100,13 @@ public final class CmContext {
     return watch;
   }
 
+  @Override
   public void close() {
+    try {
+      consulClient.close();
+    } catch (IllegalStateException e) {
+
+    }
     watchQueue.forEach(Watch::stop);
   }
 }

@@ -1,5 +1,7 @@
 package io.vertx;
 
+import io.vertx.core.ConsulClusteredComplexHATest;
+import io.vertx.core.ConsulClusteredHATest;
 import io.vertx.core.eventbus.ConsulApClusteredEventBusTest;
 import io.vertx.core.eventbus.ConsulCpClusteredEventBusTest;
 import io.vertx.core.shareddata.*;
@@ -31,10 +33,11 @@ import org.junit.runners.Suite;
   // EVENT BUS
   ConsulCpClusteredEventBusTest.class,
   ConsulApClusteredEventBusTest.class,
+  // HA
+  ConsulClusteredHATest.class,
+  ConsulClusteredComplexHATest.class,
   // TODO: get tests below done!
   // ConsulFaultToleranceTest.class,
-  // ConsulClusteredHATest.class,
-  // ConsulClusteredComplexHATest.class,
   // ConsulClusteredSessionHandlerTest.class
 
 })

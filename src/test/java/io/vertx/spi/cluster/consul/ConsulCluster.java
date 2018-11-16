@@ -9,7 +9,9 @@ public class ConsulCluster {
 
   public static int init() {
     consulAgent = new ConsulAgent();
-    return consulAgent.start();
+    int port = consulAgent.start();
+    Runtime.getRuntime().addShutdownHook(new Thread(consulAgent::stop));
+    return port;
   }
 
   public static void shutDown() {

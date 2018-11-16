@@ -1,12 +1,13 @@
 package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Vertx;
-import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.ext.consul.SessionBehavior;
 import io.vertx.ext.consul.SessionOptions;
 import io.vertx.spi.cluster.consul.ConsulCluster;
-import org.junit.*;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 
 import java.util.concurrent.*;
 
@@ -19,7 +20,7 @@ import static org.junit.Assert.*;
  */
 public class ConsulSyncMapTest {
 
-  private CmContext cmContext = new CmContext();
+  private ConfigContext cmContext = new ConfigContext();
   private static int port;
 
   @Before
@@ -29,7 +30,8 @@ public class ConsulSyncMapTest {
       .setPort(port)
       .setHost("localhost");
     cmContext.setVertx(Vertx.vertx())
-      .setConsulClient(ConsulClient.create(Vertx.vertx(), options))
+      .setConsulClientOptions(options)
+      .initConsulClient()
       .setNodeId("testSyncMapNodeId")
       .setEphemeralSessionId(getSessionId());
   }

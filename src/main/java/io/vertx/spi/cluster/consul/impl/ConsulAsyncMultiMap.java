@@ -67,7 +67,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    */
   private ConcurrentMap<K, ChoosableSet<V>> cache;
 
-  public ConsulAsyncMultiMap(String name, boolean preferConsistency, CmContext context) {
+  public ConsulAsyncMultiMap(String name, boolean preferConsistency, ConfigContext context) {
     super(name, context);
     this.preferConsistency = preferConsistency;
     // options to make entries of this map ephemeral.
@@ -178,7 +178,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     vertxInternal.getOrCreateContext().<ChoosableSet<V>>executeBlocking(event -> {
       Future<ChoosableSet<V>> future = preferConsistency
         ? nonCacheableGet(key) : cacheableGet(key);
-      ChoosableSet<V> choosableSet = toSync(future, 5000);
+      ChoosableSet<V> choosableSet = completeAndGet(future, 5000);
       event.complete(choosableSet);
     }, taskQueue, res -> out.complete(res.result()));
     return out;

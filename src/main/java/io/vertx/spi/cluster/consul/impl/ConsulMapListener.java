@@ -19,11 +19,11 @@ import java.util.Optional;
 public abstract class ConsulMapListener {
 
   protected final String name;
-  protected final CmContext context;
+  protected final ConfigContext context;
 
-  public ConsulMapListener(String name, CmContext cmContext) {
+  public ConsulMapListener(String name, ConfigContext configContext) {
     this.name = name;
-    this.context = cmContext;
+    this.context = configContext;
   }
 
   /**
@@ -85,13 +85,6 @@ public abstract class ConsulMapListener {
   }
 
   /**
-   * Simple not-null wrapper around getting key value list. As a result returns either an empty list or actual key value list.
-   */
-  protected List<KeyValue> getKeyValueListOrEmptyList(KeyValueList keyValueList) {
-    return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
-  }
-
-  /**
    * Represents an event that gets built out of consul watch's {@link io.vertx.ext.consul.KeyValueList}.
    */
   protected static final class EntryEvent {
@@ -116,6 +109,13 @@ public abstract class ConsulMapListener {
       WRITE,
       REMOVE
     }
+  }
+
+  /**
+   * Simple not-null wrapper around getting key value list. As a result returns either an empty list or actual key value list.
+   */
+  private List<KeyValue> getKeyValueListOrEmptyList(KeyValueList keyValueList) {
+    return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
   }
 
 }
