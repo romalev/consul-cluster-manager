@@ -72,14 +72,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
         log.trace("[" + context.getNodeId() + "] " + key + " put is " + resultHandler.result());
         future.complete(resultHandler.result());
       } else {
-        context.reInitConsulClient();
-        putConsulValue(key, value, keyValueOptions).setHandler(innerHandler -> {
-          if (resultHandler.succeeded()) future.complete(innerHandler.result());
-          else {
-            log.error("[" + context.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
-            future.fail(resultHandler.cause());
-          }
-        });
+        log.error("[" + context.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
+        future.fail(resultHandler.cause());
       }
     });
     return future;
@@ -132,14 +126,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
         // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
         future.complete(resultHandler.result());
       } else {
-        context.reInitConsulClient();
-        getConsulKeyValue(consulKey).setHandler(res -> {
-          if (res.succeeded()) future.complete(res.result());
-          else {
-            log.error("[" + context.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
-            future.fail(resultHandler.cause());
-          }
-        });
+        log.error("[" + context.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
+        future.fail(resultHandler.cause());
       }
     });
     return future;
@@ -155,14 +143,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
         log.trace("[" + context.getNodeId() + "] " + key + " -> " + " remove is true.");
         result.complete(true);
       } else {
-        context.reInitConsulClient();
-        deleteConsulValue(key).setHandler(res -> {
-          if (res.succeeded()) result.complete(true);
-          else {
-            log.error("[" + context.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
-            result.fail(resultHandler.cause());
-          }
-        });
+        log.error("[" + context.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
+        result.fail(resultHandler.cause());
       }
     });
     return result;
@@ -190,16 +172,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
         // log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
         futureKeys.complete(resultHandler.result());
       } else {
-        context.reInitConsulClient();
-        consulKeys().setHandler(event -> {
-          if (event.succeeded()) {
-            futureKeys.complete(event.result());
-          } else {
-            log.error("[" + context.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
-            futureKeys.fail(resultHandler.cause());
-          }
-        });
-
+        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
+        futureKeys.fail(resultHandler.cause());
       }
     });
     return futureKeys;
@@ -210,14 +184,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
     context.getConsulClient().getValues(name, resultHandler -> {
       if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
       else {
-        context.reInitConsulClient();
-        consulEntries().setHandler(event -> {
-          if (event.succeeded()) keyValueListFuture.complete(event.result());
-          else {
-            log.error("[" + context.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
-            keyValueListFuture.fail(resultHandler.cause());
-          }
-        });
+        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
+        keyValueListFuture.fail(resultHandler.cause());
       }
     });
     return keyValueListFuture;

@@ -20,6 +20,9 @@ import org.junit.runners.Suite;
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
+  // HA
+  ConsulClusteredHATest.class,
+  ConsulClusteredComplexHATest.class,
   // SHARED DATA
   ConsulAsyncApBaseMultiMapTest.class,
   ConsulAsyncCpBaseMultiMapTest.class,
@@ -33,9 +36,6 @@ import org.junit.runners.Suite;
   // EVENT BUS
   ConsulCpClusteredEventBusTest.class,
   ConsulApClusteredEventBusTest.class,
-  // HA
-  ConsulClusteredHATest.class,
-  ConsulClusteredComplexHATest.class,
   // TODO: get tests below done!
   // ConsulFaultToleranceTest.class,
   // ConsulClusteredSessionHandlerTest.class

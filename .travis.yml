@@ -19,7 +19,7 @@ install:
 
 script:
   # By default Travis-ci executes './gradlew build connectedCheck' if no 'script:' section found.
-  - ./gradlew -Dskip.tests build --info
+  - ./gradlew build --info -x test
 
 # cache between builds
 cache:
