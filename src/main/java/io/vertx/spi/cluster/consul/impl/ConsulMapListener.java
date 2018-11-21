@@ -19,11 +19,11 @@ import java.util.Optional;
 public abstract class ConsulMapListener {
 
   protected final String name;
-  protected final ConsulMapContext context;
+  protected final ConsulMapContext mapContext;
 
-  public ConsulMapListener(String name, ConsulMapContext mapContext) {
+  protected ConsulMapListener(String name, ConsulMapContext mapContext) {
     this.name = name;
-    this.context = mapContext;
+    this.mapContext = mapContext;
   }
 
   /**
@@ -34,7 +34,7 @@ public abstract class ConsulMapListener {
   protected abstract void entryUpdated(EntryEvent event);
 
   protected void startListening() {
-    context.createAndGetWatch(name).setHandler(kvWatchHandler()).start();
+    mapContext.createAndGetWatch(name).setHandler(kvWatchHandler()).start();
   }
 
   /**
@@ -96,16 +96,16 @@ public abstract class ConsulMapListener {
       this.entry = entry;
     }
 
-    protected EventType getEventType() {
+    public EventType getEventType() {
       return eventType;
     }
 
-    protected KeyValue getEntry() {
+    public KeyValue getEntry() {
       return entry;
     }
 
     // represents an event type
-    enum EventType {
+    public enum EventType {
       WRITE,
       REMOVE
     }

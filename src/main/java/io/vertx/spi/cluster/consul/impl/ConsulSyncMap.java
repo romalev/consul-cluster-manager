@@ -54,7 +54,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   public V put(K key, V value) {
     return completeAndGet(putValue(key, value).compose(aBoolean -> {
       if (aBoolean) return succeededFuture(value);
-      else return Future.failedFuture("[" + context.getNodeId() + "]" + " failed to put KV: " + key + " -> " + value);
+      else return Future.failedFuture("[" + mapContext.getNodeId() + "]" + " failed to put KV: " + key + " -> " + value);
     }), timeout);
   }
 
@@ -65,7 +65,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
       else return delete((K) key).compose(aBoolean -> {
         if (aBoolean) {
           return succeededFuture(v);
-        } else return Future.failedFuture("[" + context.getNodeId() + "]" + " failed to remove an entry by K: " + key);
+        } else return Future.failedFuture("[" + mapContext.getNodeId() + "]" + " failed to remove an entry by K: " + key);
       });
     }), timeout);
   }

@@ -11,7 +11,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Consul map context.
+ * Consul map mapContext.
  *
  * @author Roman Levytskyi
  */

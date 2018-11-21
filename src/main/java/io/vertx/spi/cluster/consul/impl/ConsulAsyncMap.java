@@ -3,6 +3,7 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.VertxException;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -165,19 +166,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
   @Override
   public void entries(Handler<AsyncResult<Map<K, V>>> asyncResultHandler) {
     entries().setHandler(asyncResultHandler);
-  }
-
-  /**
-   * Given implementation does NOT take advantage of internal cache :(
-   * <p>
-   * POSSIBLE IMPROVEMENT: adjust internal cache to be based on MultiKeyMap
-   * so then we can query it by actual consul kv store keys (which are not being encoded and are plain strings)
-   *
-   * @return entries from consul kv store.
-   */
-  @Override
-  Future<Map<K, V>> entries() {
-    return super.entries();
   }
 
   /**
