@@ -168,11 +168,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     entries().setHandler(asyncResultHandler);
   }
 
-  @Override
-  protected void entryUpdated(EntryEvent event) {
-    throw new VertxException("Not implemented.");
-  }
-
   /**
    * Puts the entry only if there is no entry with the key already present. If key already present then the existing
    * value will be returned to the handler, otherwise null.

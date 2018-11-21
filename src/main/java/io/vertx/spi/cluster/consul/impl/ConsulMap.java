@@ -306,6 +306,10 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
     return result;
   }
 
+  @Override
+  protected void entryUpdated(EntryEvent event) {
+  }
+
   /**
    * Verifies whether value is not null.
    */
