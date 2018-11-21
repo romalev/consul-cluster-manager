@@ -40,7 +40,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @param name    - lock's name.
    * @param checkId - check id to which session id will get bound to.
    * @param timeout - time trying to obtain a lock in ms.
-   * @param context - cluster manager context.
+   * @param context - cluster manager mapContext.
    */
   public ConsulLock(String name, String checkId, long timeout, ConsulMapContext context) {
     super("__vertx.locks", context);
@@ -56,7 +56,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return true - lock has been successfully obtained, false - otherwise.
    */
   public boolean tryObtain() {
-    log.trace("[" + context.getNodeId() + "]" + " is trying to obtain a lock on: " + lockName);
+    log.trace("[" + mapContext.getNodeId() + "]" + " is trying to obtain a lock on: " + lockName);
     boolean lockObtained = completeAndGet(obtain(), timeout);
     if (lockObtained) {
       log.info("Lock on: " + lockName + " has been obtained.");
@@ -81,7 +81,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @return consul session id.
    */
   private String obtainSessionId(String checkId) {
-    return completeAndGet(registerSession("Session for lock: " + lockName + " of: " + context.getNodeId(), checkId), timeout);
+    return completeAndGet(registerSession("Session for lock: " + lockName + " of: " + mapContext.getNodeId(), checkId), timeout);
   }
 
   /**

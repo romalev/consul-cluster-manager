@@ -23,11 +23,11 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asFutureString;
  *
  * @author Roman Levytskyi
  */
-abstract class ConsulMap<K, V> extends ConsulMapListener {
+public abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   private static final Logger log = LoggerFactory.getLogger(ConsulMap.class);
 
-  ConsulMap(String name, ConsulMapContext mapContext) {
+  protected ConsulMap(String name, ConsulMapContext mapContext) {
     super(name, mapContext);
   }
 
@@ -38,7 +38,7 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @param v - holds the value of an entry.
    * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
    */
-  Future<Boolean> putValue(K k, V v) {
+  protected Future<Boolean> putValue(K k, V v) {
     return putValue(k, v, null);
   }
 
@@ -51,9 +51,9 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @param keyValueOptions - holds kv options (note: null is allowed)
    * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
    */
-  Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
+  protected Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
     return assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> asFutureString(k, v, context.getNodeId()))
+      .compose(aVoid -> asFutureString(k, v, mapContext.getNodeId()))
       .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
   }
 
@@ -65,14 +65,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @param keyValueOptions - holds kv options (note: null is allowed)
    * @return booleanFuture indication the put result (true - an entry has been put, false - otherwise), failedFuture - otherwise.
    */
-  Future<Boolean> putConsulValue(String key, String value, KeyValueOptions keyValueOptions) {
+  protected Future<Boolean> putConsulValue(String key, String value, KeyValueOptions keyValueOptions) {
     Future<Boolean> future = Future.future();
-    context.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
+    mapContext.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + context.getNodeId() + "] " + key + " put is " + resultHandler.result());
+        log.trace("[" + mapContext.getNodeId() + "] " + key + " put is " + resultHandler.result());
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -85,14 +85,35 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @param k - holds the key.
    * @return either empty future if key doesn't exist in KV store, future containing the value if key exists, failedFuture - otherwise.
    */
-  Future<V> getValue(K k) {
+  protected Future<V> getValue(K k) {
     return assertKeyIsNotNull(k)
       .compose(aVoid -> getConsulKeyValue(keyPath(k)))
       .compose(consulValue -> asFutureConsulEntry(consulValue.getValue()))
       .compose(consulEntry -> consulEntry == null ? succeededFuture() : succeededFuture((V) consulEntry.getValue()));
   }
 
-  Future<Map<K, V>> entries() {
+  /**
+   * Gets the value by consul key.
+   *
+   * @param consulKey - holds the consul key.
+   * @return either empty future if key doesn't exist in KV store, future containing the value if key exists, failedFuture - otherwise.
+   */
+  protected Future<KeyValue> getConsulKeyValue(String consulKey) {
+    Future<KeyValue> future = Future.future();
+    mapContext.getConsulClient().getValue(consulKey, resultHandler -> {
+      if (resultHandler.succeeded()) {
+        // note: resultHandler.result().getValue() is null if nothing was found.
+        // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
+        future.complete(resultHandler.result());
+      } else {
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
+        future.fail(resultHandler.cause());
+      }
+    });
+    return future;
+  }
+
+  protected Future<Map<K, V>> entries() {
     return consulEntries()
       .compose(kvEntries -> {
         List<Future> futureList = new ArrayList<>();
@@ -113,37 +134,16 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
   }
 
   /**
-   * Gets the value by consul key.
-   *
-   * @param consulKey - holds the consul key.
-   * @return either empty future if key doesn't exist in KV store, future containing the value if key exists, failedFuture - otherwise.
-   */
-  Future<KeyValue> getConsulKeyValue(String consulKey) {
-    Future<KeyValue> future = Future.future();
-    context.getConsulClient().getValue(consulKey, resultHandler -> {
-      if (resultHandler.succeeded()) {
-        // note: resultHandler.result().getValue() is null if nothing was found.
-        // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
-        future.complete(resultHandler.result());
-      } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
-        future.fail(resultHandler.cause());
-      }
-    });
-    return future;
-  }
-
-  /**
    * Remove the key/value pair that corresponding to the specified key.
    */
-  Future<Boolean> deleteConsulValue(String key) {
+  protected Future<Boolean> deleteConsulValue(String key) {
     Future<Boolean> result = Future.future();
-    context.getConsulClient().deleteValue(key, resultHandler -> {
+    mapContext.getConsulClient().deleteValue(key, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + context.getNodeId() + "] " + key + " -> " + " remove is true.");
+        log.trace("[" + mapContext.getNodeId() + "] " + key + " -> " + " remove is true.");
         result.complete(true);
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
         result.fail(resultHandler.cause());
       }
     });
@@ -153,58 +153,52 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
   /**
    * Clears the entire map.
    */
-  Future<Void> deleteAll() {
+  protected Future<Void> deleteAll() {
     Future<Void> future = Future.future();
-    context.getConsulClient().deleteValues(name, result -> {
+    mapContext.getConsulClient().deleteValues(name, result -> {
       if (result.succeeded()) future.complete();
       else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to clear an entire: " + name);
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to clear an entire: " + name);
         future.fail(result.cause());
       }
     });
     return future;
   }
 
-  Future<List<String>> consulKeys() {
+  protected Future<List<String>> consulKeys() {
     Future<List<String>> futureKeys = Future.future();
-    context.getConsulClient().getKeys(name, resultHandler -> {
+    mapContext.getConsulClient().getKeys(name, resultHandler -> {
       if (resultHandler.succeeded()) {
         // log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
         futureKeys.complete(resultHandler.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
         futureKeys.fail(resultHandler.cause());
       }
     });
     return futureKeys;
   }
 
-  Future<List<KeyValue>> consulEntries() {
+  protected Future<List<KeyValue>> consulEntries() {
     Future<List<KeyValue>> keyValueListFuture = Future.future();
-    context.getConsulClient().getValues(name, resultHandler -> {
+    mapContext.getConsulClient().getValues(name, resultHandler -> {
       if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
       else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
         keyValueListFuture.fail(resultHandler.cause());
       }
     });
     return keyValueListFuture;
   }
 
-
-  @Override
-  protected void entryUpdated(EntryEvent event) {
-    // default map listener implementation doesn't start a watch to listen for updates.
-  }
-
   /**
-   * Creates consul session. Consul session is used (in context of vertx cluster manager) to create ephemeral map entries.
+   * Creates consul session. Consul session is used (in mapContext of vertx cluster manager) to create ephemeral map entries.
    *
    * @param sessionName - session name.
    * @param checkId     - id of the check session will get bound to.
    * @return session id.
    */
-  Future<String> registerSession(String sessionName, String checkId) {
+  protected Future<String> registerSession(String sessionName, String checkId) {
     Future<String> future = Future.future();
     SessionOptions sessionOptions = new SessionOptions()
       .setBehavior(SessionBehavior.DELETE)
@@ -212,12 +206,12 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
       .setName(sessionName)
       .setChecks(Arrays.asList(checkId, "serfHealth"));
 
-    context.getConsulClient().createSessionWithOptions(sessionOptions, session -> {
+    mapContext.getConsulClient().createSessionWithOptions(sessionOptions, session -> {
       if (session.succeeded()) {
-        log.trace("[" + context.getNodeId() + "]" + " - " + sessionName + ": " + session.result() + " has been registered.");
+        log.trace("[" + mapContext.getNodeId() + "]" + " - " + sessionName + ": " + session.result() + " has been registered.");
         future.complete(session.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to register the session.", session.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register the session.", session.cause());
         future.fail(session.cause());
       }
     });
@@ -227,14 +221,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
   /**
    * Destroys node's session in consul.
    */
-  Future<Void> destroySession(String sessionId) {
+  protected Future<Void> destroySession(String sessionId) {
     Future<Void> future = Future.future();
-    context.getConsulClient().destroySession(sessionId, resultHandler -> {
+    mapContext.getConsulClient().destroySession(sessionId, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + context.getNodeId() + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
+        log.trace("[" + mapContext.getNodeId() + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
         future.complete();
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -253,14 +247,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @param ttl - holds ttl in ms, this value must be between {@code 10s} and {@code 86400s} currently.
    * @return session id.
    */
-  Future<String> getTtlSessionId(long ttl, K k) {
+  protected Future<String> getTtlSessionId(long ttl, K k) {
     if (ttl < 10000) {
-      log.warn("[" + context.getNodeId() + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");
+      log.warn("[" + mapContext.getNodeId() + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");
       ttl = 10000;
     }
 
     if (ttl > 86400000) {
-      log.warn("[" + context.getNodeId() + "]" + " - Specified ttl is more that allowed in consul -> max ttl is 86400s.");
+      log.warn("[" + mapContext.getNodeId() + "]" + " - Specified ttl is more that allowed in consul -> max ttl is 86400s.");
       ttl = 86400000;
     }
 
@@ -275,12 +269,12 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
       .setLockDelay(0)
       .setName(sessionName);
 
-    context.getConsulClient().createSessionWithOptions(sessionOpts, idHandler -> {
+    mapContext.getConsulClient().createSessionWithOptions(sessionOpts, idHandler -> {
       if (idHandler.succeeded()) {
-        log.trace("[" + context.getNodeId() + "]" + " - TTL session has been created with id: " + idHandler.result());
+        log.trace("[" + mapContext.getNodeId() + "]" + " - TTL session has been created with id: " + idHandler.result());
         future.complete(idHandler.result());
       } else {
-        log.error("[" + context.getNodeId() + "]" + " - Failed to create ttl consul session", idHandler.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to create ttl consul session", idHandler.cause());
         future.fail(idHandler.cause());
       }
     });
@@ -290,14 +284,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   /**
    * Obtains a result from {@link Future} by and waiting for it's completion.
-   * Note: should never be called from event loop context!
+   * Note: should never be called from event loop mapContext!
    *
    * @param future  - future holding result of future computation.
    * @param timeout - the maximum time to wait in ms.
    * @param <T>     - result type.
    * @return computation result.
    */
-  <T> T completeAndGet(Future<T> future, long timeout) {
+  protected <T> T completeAndGet(Future<T> future, long timeout) {
     CompletableFuture<T> completableFuture = new CompletableFuture<>();
     future.setHandler(event -> {
       if (event.succeeded()) completableFuture.complete(event.result());
@@ -315,7 +309,7 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
   /**
    * Verifies whether value is not null.
    */
-  Future<Void> assertValueIsNotNull(Object value) {
+  protected Future<Void> assertValueIsNotNull(Object value) {
     boolean result = value == null;
     if (result) return io.vertx.core.Future.failedFuture("Value can not be null.");
     else return succeededFuture();
@@ -324,20 +318,20 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
   /**
    * Verifies whether key & value are not null.
    */
-  Future<Void> assertKeyAndValueAreNotNull(Object key, Object value) {
+  protected Future<Void> assertKeyAndValueAreNotNull(Object key, Object value) {
     return assertKeyIsNotNull(key).compose(aVoid -> assertValueIsNotNull(value));
   }
 
   /**
    * Verifies whether key is not null.
    */
-  Future<Void> assertKeyIsNotNull(Object key) {
+  protected Future<Void> assertKeyIsNotNull(Object key) {
     boolean result = key == null;
     if (result) return io.vertx.core.Future.failedFuture("Key can not be null.");
     else return succeededFuture();
   }
 
-  String keyPath(Object k) {
+  protected String keyPath(Object k) {
     // we can't simply ship sequence of bytes to consul.
     if (k instanceof Buffer) {
       return name + "/" + Base64.getEncoder().encodeToString(((Buffer) k).getBytes());
@@ -345,14 +339,14 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
     return name + "/" + k.toString();
   }
 
-  String actualKey(String key) {
+  protected String actualKey(String key) {
     return key.replace(name + "/", "");
   }
 
   /**
    * Returns NULL - safe key value list - simple wrapper around getting list out of {@link KeyValueList} instance.
    */
-  List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
+  protected List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
     return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
   }
 
