@@ -6,10 +6,7 @@ import io.vertx.ext.consul.KeyValueList;
 import io.vertx.ext.consul.WatchResult;
 import io.vertx.spi.cluster.consul.impl.ConsulMapListener.EntryEvent.EventType;
 
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Consul KV store listener encapsulates mechanism of receiving {@link io.vertx.ext.consul.KeyValueList} and transforming it to internal {@link EntryEvent}.
@@ -22,8 +19,8 @@ public abstract class ConsulMapListener {
   protected final ConsulMapContext mapContext;
 
   protected ConsulMapListener(String name, ConsulMapContext mapContext) {
-    this.name = name;
-    this.mapContext = mapContext;
+    this.name = Objects.requireNonNull(name);
+    this.mapContext = Objects.requireNonNull(mapContext);
   }
 
   /**

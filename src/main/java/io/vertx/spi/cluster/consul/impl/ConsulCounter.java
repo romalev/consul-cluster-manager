@@ -40,7 +40,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   @Override
   public void get(Handler<AsyncResult<Long>> resultHandler) {
     Objects.requireNonNull(resultHandler);
-    getConsulKeyValue(consulKey)
+    getPlainValue(consulKey)
       .map(this::extractActualCounterValue)
       .setHandler(resultHandler);
   }
@@ -78,12 +78,12 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   @Override
   public void compareAndSet(long expected, long value, Handler<AsyncResult<Boolean>> resultHandler) {
     Objects.requireNonNull(resultHandler);
-    getConsulKeyValue(consulKey)
+    getPlainValue(consulKey)
       .compose(keyValue -> {
         Future<Boolean> result = Future.future();
         final Long preValue = extractActualCounterValue(keyValue);
         if (preValue == expected) {
-          putConsulValue(consulKey, String.valueOf(value), null).setHandler(result.completer());
+          putPlainValue(consulKey, String.valueOf(value), null).setHandler(result.completer());
         } else {
           result.complete(false);
         }
@@ -97,12 +97,12 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
    */
   private void calculateAndCompareAndSwap(boolean postGet, Long value, Handler<AsyncResult<Long>> resultHandler) {
     Objects.requireNonNull(resultHandler);
-    getConsulKeyValue(consulKey)
+    getPlainValue(consulKey)
       .compose(keyValue -> {
         Future<Long> result = Future.future();
         final Long preValue = extractActualCounterValue(keyValue);
         final Long postValue = preValue + value;
-        putConsulValue(consulKey, String.valueOf(postValue), new KeyValueOptions().setCasIndex(keyValue.getModifyIndex()))
+        putPlainValue(consulKey, String.valueOf(postValue), new KeyValueOptions().setCasIndex(keyValue.getModifyIndex()))
           .setHandler(putRes -> {
             if (putRes.succeeded()) {
               if (putRes.result()) {

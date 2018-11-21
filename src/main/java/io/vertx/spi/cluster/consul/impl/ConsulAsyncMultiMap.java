@@ -162,7 +162,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   private Future<Boolean> addToConsulKv(K key, Set<V> vs, String nodeId) {
     return asFutureString(key, vs, nodeId)
-      .compose(encodedValue -> putConsulValue(keyPathForAllByAddressAndByNodeId(key, nodeId), encodedValue, kvOpts));
+      .compose(encodedValue -> putPlainValue(keyPathForAllByAddressAndByNodeId(key, nodeId), encodedValue, kvOpts));
   }
 
   /*
@@ -222,7 +222,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   private Future<Boolean> nonCacheableDelete(K key, V value, ChoosableSet<V> from, String nodeId) {
     if (from.remove(value)) {
-      if (from.isEmpty()) return deleteConsulValue(keyPathForAllByAddressAndByNodeId(key, nodeId));
+      if (from.isEmpty()) return deleteValueByPlainKey(keyPathForAllByAddressAndByNodeId(key, nodeId));
       else return addToConsulKv(key, toHashSet(from), nodeId);
     } else {
       return Future.succeededFuture(false);

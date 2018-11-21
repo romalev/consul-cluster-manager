@@ -36,36 +36,36 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    *
    * @param k - holds the key of an entry.
    * @param v - holds the value of an entry.
-   * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
+   * @return {@link Future}} containing result.
    */
-  protected Future<Boolean> putValue(K k, V v) {
+  Future<Boolean> putValue(K k, V v) {
     return putValue(k, v, null);
   }
 
   /**
-   * Puts an entry to Consul KV store by taking into account additional options : these options are mainly used to make an entry ephemeral or
-   * to place TTL on an entry.
+   * Puts an entry to Consul KV store by taking into account additional options
+   * (these options are mainly used to make an entry ephemeral or to place TTL on an entry).
    *
    * @param k               - holds the key of an entry.
    * @param v               - holds the value of an entry.
    * @param keyValueOptions - holds kv options (note: null is allowed)
-   * @return succeededFuture indicating that an entry has been put, failedFuture - otherwise.
+   * @return {@link Future}} containing result.
    */
-  protected Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
+  Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
     return assertKeyAndValueAreNotNull(k, v)
       .compose(aVoid -> asFutureString(k, v, mapContext.getNodeId()))
-      .compose(value -> putConsulValue(keyPath(k), value, keyValueOptions));
+      .compose(value -> putPlainValue(keyPath(k), value, keyValueOptions));
   }
 
   /**
-   * Puts an entry to Consul KV store. Does the actual job.
+   * Puts plain entry {@link String key} and {@link String value} to Consul KV store.
    *
    * @param key             - holds the consul key of an entry.
    * @param value           - holds the consul value (should be marshaled) of an entry.
    * @param keyValueOptions - holds kv options (note: null is allowed)
-   * @return booleanFuture indication the put result (true - an entry has been put, false - otherwise), failedFuture - otherwise.
+   * @return {@link Future}} containing result.
    */
-  protected Future<Boolean> putConsulValue(String key, String value, KeyValueOptions keyValueOptions) {
+  protected Future<Boolean> putPlainValue(String key, String value, KeyValueOptions keyValueOptions) {
     Future<Boolean> future = Future.future();
     mapContext.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
@@ -83,22 +83,22 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    * Gets the value by key.
    *
    * @param k - holds the key.
-   * @return either empty future if key doesn't exist in KV store, future containing the value if key exists, failedFuture - otherwise.
+   * @return @return {@link Future}} containing result.
    */
-  protected Future<V> getValue(K k) {
+  Future<V> getValue(K k) {
     return assertKeyIsNotNull(k)
-      .compose(aVoid -> getConsulKeyValue(keyPath(k)))
+      .compose(aVoid -> getPlainValue(keyPath(k)))
       .compose(consulValue -> asFutureConsulEntry(consulValue.getValue()))
       .compose(consulEntry -> consulEntry == null ? succeededFuture() : succeededFuture((V) consulEntry.getValue()));
   }
 
   /**
-   * Gets the value by consul key.
+   * Gets the plain {@link String} value by plain {@link String} key.
    *
    * @param consulKey - holds the consul key.
-   * @return either empty future if key doesn't exist in KV store, future containing the value if key exists, failedFuture - otherwise.
+   * @return @return {@link Future}} containing result.
    */
-  protected Future<KeyValue> getConsulKeyValue(String consulKey) {
+  Future<KeyValue> getPlainValue(String consulKey) {
     Future<KeyValue> future = Future.future();
     mapContext.getConsulClient().getValue(consulKey, resultHandler -> {
       if (resultHandler.succeeded()) {
@@ -113,8 +113,13 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
     return future;
   }
 
-  protected Future<Map<K, V>> entries() {
-    return consulEntries()
+  /**
+   * Gets all map's entries.
+   *
+   * @return @return {@link Future}} containing result.
+   */
+  Future<Map<K, V>> entries() {
+    return plainEntries()
       .compose(kvEntries -> {
         List<Future> futureList = new ArrayList<>();
         kvEntries.forEach(kv -> futureList.add(asFutureConsulEntry(kv.getValue())));
@@ -129,14 +134,23 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
       });
   }
 
-  Future<Boolean> delete(K key) {
-    return deleteConsulValue(keyPath(key));
+  /**
+   * Removes an entry by key.
+   *
+   * @param key holds the key.
+   * @return @return {@link Future}} containing result.
+   */
+  Future<Boolean> deleteValue(K key) {
+    return deleteValueByPlainKey(keyPath(key));
   }
 
   /**
-   * Remove the key/value pair that corresponding to the specified key.
+   * Removes an entry by key.
+   *
+   * @param key - holds the plain {@link String} key.
+   * @return @return {@link Future}} containing result.
    */
-  protected Future<Boolean> deleteConsulValue(String key) {
+  protected Future<Boolean> deleteValueByPlainKey(String key) {
     Future<Boolean> result = Future.future();
     mapContext.getConsulClient().deleteValue(key, resultHandler -> {
       if (resultHandler.succeeded()) {
@@ -151,9 +165,9 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   }
 
   /**
-   * Clears the entire map.
+   * Deletes the entire map.
    */
-  protected Future<Void> deleteAll() {
+  Future<Void> deleteAll() {
     Future<Void> future = Future.future();
     mapContext.getConsulClient().deleteValues(name, result -> {
       if (result.succeeded()) future.complete();
@@ -165,7 +179,10 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
     return future;
   }
 
-  protected Future<List<String>> consulKeys() {
+  /**
+   * @return {@link Future} of plain consul kv map's keys.
+   */
+  protected Future<List<String>> plainKeys() {
     Future<List<String>> futureKeys = Future.future();
     mapContext.getConsulClient().getKeys(name, resultHandler -> {
       if (resultHandler.succeeded()) {
@@ -179,7 +196,10 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
     return futureKeys;
   }
 
-  protected Future<List<KeyValue>> consulEntries() {
+  /**
+   * @return {@link Future} of plain consul kv map's entries.
+   */
+  Future<List<KeyValue>> plainEntries() {
     Future<List<KeyValue>> keyValueListFuture = Future.future();
     mapContext.getConsulClient().getValues(name, resultHandler -> {
       if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
@@ -192,11 +212,11 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   }
 
   /**
-   * Creates consul session. Consul session is used (in mapContext of vertx cluster manager) to create ephemeral map entries.
+   * Creates consul session.
    *
    * @param sessionName - session name.
-   * @param checkId     - id of the check session will get bound to.
-   * @return session id.
+   * @param checkId     - id of the tcp check session will get bound to.
+   * @return {@link Future} session id.
    */
   protected Future<String> registerSession(String sessionName, String checkId) {
     Future<String> future = Future.future();
@@ -284,12 +304,12 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   /**
    * Obtains a result from {@link Future} by and waiting for it's completion.
-   * Note: should never be called from event loop mapContext!
+   * Note: should never be called on vert.x event loop context!
    *
-   * @param future  - future holding result of future computation.
-   * @param timeout - the maximum time to wait in ms.
-   * @param <T>     - result type.
-   * @return computation result.
+   * @param future  - holds the work that needs to be executed.
+   * @param timeout - the maximum time to wait in ms for work to complete.
+   * @param <T>     - work's result type.
+   * @return actual computation result.
    */
   protected <T> T completeAndGet(Future<T> future, long timeout) {
     CompletableFuture<T> completableFuture = new CompletableFuture<>();
@@ -313,7 +333,7 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   /**
    * Verifies whether value is not null.
    */
-  protected Future<Void> assertValueIsNotNull(Object value) {
+  Future<Void> assertValueIsNotNull(Object value) {
     boolean result = value == null;
     if (result) return io.vertx.core.Future.failedFuture("Value can not be null.");
     else return succeededFuture();
@@ -322,19 +342,26 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   /**
    * Verifies whether key & value are not null.
    */
-  protected Future<Void> assertKeyAndValueAreNotNull(Object key, Object value) {
+  Future<Void> assertKeyAndValueAreNotNull(Object key, Object value) {
     return assertKeyIsNotNull(key).compose(aVoid -> assertValueIsNotNull(value));
   }
 
   /**
    * Verifies whether key is not null.
    */
-  protected Future<Void> assertKeyIsNotNull(Object key) {
+  Future<Void> assertKeyIsNotNull(Object key) {
     boolean result = key == null;
     if (result) return io.vertx.core.Future.failedFuture("Key can not be null.");
     else return succeededFuture();
   }
 
+  /**
+   * Builds a key path to consul map.
+   * Later on this key path should be used to access any entry of given consul map.
+   *
+   * @param k actual key.
+   * @return key path.
+   */
   protected String keyPath(Object k) {
     // we can't simply ship sequence of bytes to consul.
     if (k instanceof Buffer) {
@@ -343,14 +370,17 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
     return name + "/" + k.toString();
   }
 
-  protected String actualKey(String key) {
-    return key.replace(name + "/", "");
+  /**
+   * Extracts an actual keyPath of consup map keyPath path.
+   */
+  protected String actualKey(String keyPath) {
+    return keyPath.replace(name + "/", "");
   }
 
   /**
    * Returns NULL - safe key value list - simple wrapper around getting list out of {@link KeyValueList} instance.
    */
-  protected List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
+  List<KeyValue> nullSafeListResult(KeyValueList keyValueList) {
     return keyValueList == null || keyValueList.getList() == null ? Collections.emptyList() : keyValueList.getList();
   }
 

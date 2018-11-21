@@ -3,7 +3,6 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.VertxException;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -71,7 +70,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     }).compose(v -> {
       Future<V> future = Future.future();
       if (v == null) future.complete();
-      else deleteConsulValue(keyPath(k))
+      else deleteValueByPlainKey(keyPath(k))
         .compose(removeSucceeded -> removeSucceeded ? succeededFuture(v) : failedFuture("Key + " + k + " wasn't removed."))
         .setHandler(future.completer());
       return future;
@@ -88,7 +87,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
       return future;
     }).compose(value -> {
       if (v.equals(value))
-        return deleteConsulValue(keyPath(k))
+        return deleteValueByPlainKey(keyPath(k))
           .compose(removeSucceeded -> removeSucceeded ? succeededFuture(true) : failedFuture("Key + " + k + " wasn't removed."));
       else return succeededFuture(false);
     }).setHandler(resultHandler);
@@ -150,7 +149,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
   @Override
   public void size(Handler<AsyncResult<Integer>> resultHandler) {
-    consulKeys().compose(list -> succeededFuture(list.size())).setHandler(resultHandler);
+    plainKeys().compose(list -> succeededFuture(list.size())).setHandler(resultHandler);
   }
 
   @Override

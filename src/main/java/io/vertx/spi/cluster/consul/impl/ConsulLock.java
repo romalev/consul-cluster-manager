@@ -88,6 +88,6 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * Obtains the lock asynchronously.
    */
   private Future<Boolean> obtain() {
-    return putConsulValue(keyPath(lockName), "lockAcquired", new KeyValueOptions().setAcquireSession(sessionId));
+    return putPlainValue(keyPath(lockName), "lockAcquired", new KeyValueOptions().setAcquireSession(sessionId));
   }
 }
