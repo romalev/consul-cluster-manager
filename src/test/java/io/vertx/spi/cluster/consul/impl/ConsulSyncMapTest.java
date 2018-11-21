@@ -20,7 +20,7 @@ import static org.junit.Assert.*;
  */
 public class ConsulSyncMapTest {
 
-  private ConfigContext cmContext = new ConfigContext();
+  private ConsulMapContext cmContext = new ConsulMapContext();
   private static int port;
 
   @Before

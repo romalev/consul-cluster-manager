@@ -27,8 +27,8 @@ abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   private static final Logger log = LoggerFactory.getLogger(ConsulMap.class);
 
-  ConsulMap(String name, ConfigContext configContext) {
-    super(name, configContext);
+  ConsulMap(String name, ConsulMapContext mapContext) {
+    super(name, mapContext);
   }
 
   /**

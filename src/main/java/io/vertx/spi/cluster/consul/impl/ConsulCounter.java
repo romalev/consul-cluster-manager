@@ -32,7 +32,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   // key to access counter.
   private final String consulKey;
 
-  public ConsulCounter(String name, ConfigContext context) {
+  public ConsulCounter(String name, ConsulMapContext context) {
     super("__vertx.counters", context);
     this.consulKey = keyPath(name);
   }

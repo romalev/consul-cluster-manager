@@ -19,11 +19,11 @@ import java.util.Optional;
 public abstract class ConsulMapListener {
 
   protected final String name;
-  protected final ConfigContext context;
+  protected final ConsulMapContext context;
 
-  public ConsulMapListener(String name, ConfigContext configContext) {
+  public ConsulMapListener(String name, ConsulMapContext mapContext) {
     this.name = name;
-    this.context = configContext;
+    this.context = mapContext;
   }
 
   /**

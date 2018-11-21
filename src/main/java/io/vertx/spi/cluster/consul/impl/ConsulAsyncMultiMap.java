@@ -67,7 +67,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    */
   private ConcurrentMap<K, ChoosableSet<V>> cache;
 
-  public ConsulAsyncMultiMap(String name, boolean preferConsistency, ConfigContext context) {
+  public ConsulAsyncMultiMap(String name, boolean preferConsistency, ConsulMapContext context) {
     super(name, context);
     this.preferConsistency = preferConsistency;
     // options to make entries of this map ephemeral.

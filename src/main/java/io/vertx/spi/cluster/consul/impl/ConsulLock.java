@@ -42,7 +42,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
    * @param timeout - time trying to obtain a lock in ms.
    * @param context - cluster manager context.
    */
-  public ConsulLock(String name, String checkId, long timeout, ConfigContext context) {
+  public ConsulLock(String name, String checkId, long timeout, ConsulMapContext context) {
     super("__vertx.locks", context);
     this.lockName = name;
     this.timeout = timeout;

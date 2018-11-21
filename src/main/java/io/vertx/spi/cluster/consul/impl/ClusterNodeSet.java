@@ -44,7 +44,7 @@ public class ClusterNodeSet extends ConsulMap<String, String> {
   private boolean isClusterManagerActive;
 
 
-  public ClusterNodeSet(ConfigContext configContext) {
+  public ClusterNodeSet(ConsulMapContext configContext) {
     super(NAME, configContext);
     nodes = completeAndGet(
       consulKeys().compose(keys -> Future.succeededFuture(keys.stream().map(this::actualKey).collect(Collectors.toSet()))),

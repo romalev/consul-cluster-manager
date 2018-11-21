@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *
  * @author Roman Levytskyi
  */
-public final class ConfigContext implements AutoCloseable {
+public final class ConsulMapContext implements AutoCloseable {
 
   private String nodeId;
   private Vertx vertx;
@@ -25,20 +25,20 @@ public final class ConfigContext implements AutoCloseable {
   // TODO: do we really need ConcurrentLinkedQueue?
   private Queue<Watch<KeyValueList>> watchQueue = new ConcurrentLinkedQueue<>();
 
-  public ConfigContext setVertx(Vertx vertx) {
+  public ConsulMapContext setVertx(Vertx vertx) {
     Objects.requireNonNull(vertx);
     this.vertx = vertx;
     return this;
   }
 
-  public ConfigContext initConsulClient() {
+  public ConsulMapContext initConsulClient() {
     Objects.requireNonNull(vertx);
     Objects.requireNonNull(consulClientOptions);
     this.consulClient = ConsulClient.create(vertx, consulClientOptions);
     return this;
   }
 
-  public ConfigContext reInitConsulClient() {
+  public ConsulMapContext reInitConsulClient() {
     Objects.requireNonNull(consulClient);
     try {
       consulClient.close();
@@ -48,19 +48,19 @@ public final class ConfigContext implements AutoCloseable {
     return initConsulClient();
   }
 
-  public ConfigContext setNodeId(String nodeId) {
+  public ConsulMapContext setNodeId(String nodeId) {
     Objects.requireNonNull(nodeId);
     this.nodeId = nodeId;
     return this;
   }
 
-  public ConfigContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
+  public ConsulMapContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
     Objects.requireNonNull(consulClientOptions);
     this.consulClientOptions = consulClientOptions;
     return this;
   }
 
-  public ConfigContext setEphemeralSessionId(String sessionId) {
+  public ConsulMapContext setEphemeralSessionId(String sessionId) {
     Objects.requireNonNull(sessionId);
     this.ephemeralSessionId = sessionId;
     return this;

@@ -21,7 +21,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   private long timeout = 30_000;
 
-  public ConsulSyncMap(String name, ConfigContext cmContext) {
+  public ConsulSyncMap(String name, ConsulMapContext cmContext) {
     super(name, cmContext);
   }
 
