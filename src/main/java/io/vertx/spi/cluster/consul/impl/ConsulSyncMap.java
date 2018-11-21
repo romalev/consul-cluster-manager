@@ -19,40 +19,40 @@ import static io.vertx.core.Future.succeededFuture;
  */
 public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
 
-  private long timeout = 10000;
+  private long timeout = 30_000;
 
-  public ConsulSyncMap(String name, CmContext cmContext) {
+  public ConsulSyncMap(String name, ConsulMapContext cmContext) {
     super(name, cmContext);
   }
 
   @Override
   public int size() {
-    return toSync(consulKeys().compose(list -> succeededFuture(list.size())), timeout);
+    return completeAndGet(consulKeys().compose(list -> succeededFuture(list.size())), timeout);
   }
 
   @Override
   public boolean isEmpty() {
-    return toSync(consulKeys().compose(list -> succeededFuture(list.isEmpty())), timeout);
+    return completeAndGet(consulKeys().compose(list -> succeededFuture(list.isEmpty())), timeout);
   }
 
   @Override
   public boolean containsKey(Object key) {
-    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.keySet().contains(key))), timeout);
+    return completeAndGet(entries().compose(kvMap -> succeededFuture(kvMap.keySet().contains(key))), timeout);
   }
 
   @Override
   public boolean containsValue(Object value) {
-    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.values().contains(value))), timeout);
+    return completeAndGet(entries().compose(kvMap -> succeededFuture(kvMap.values().contains(value))), timeout);
   }
 
   @Override
   public V get(Object key) {
-    return toSync(getValue((K) key), timeout);
+    return completeAndGet(getValue((K) key), timeout);
   }
 
   @Override
   public V put(K key, V value) {
-    return toSync(putValue(key, value).compose(aBoolean -> {
+    return completeAndGet(putValue(key, value).compose(aBoolean -> {
       if (aBoolean) return succeededFuture(value);
       else return Future.failedFuture("[" + context.getNodeId() + "]" + " failed to put KV: " + key + " -> " + value);
     }), timeout);
@@ -60,7 +60,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public V remove(Object key) {
-    return toSync(getValue((K) key).compose(v -> {
+    return completeAndGet(getValue((K) key).compose(v -> {
       if (v == null) return succeededFuture();
       else return delete((K) key).compose(aBoolean -> {
         if (aBoolean) {
@@ -77,7 +77,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public void clear() {
-    toSync(deleteAll(), timeout);
+    completeAndGet(deleteAll(), timeout);
   }
 
   // async version of clear - can be executed directly on event loop.
@@ -87,16 +87,16 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public Set<K> keySet() {
-    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.keySet())), timeout);
+    return completeAndGet(entries().compose(kvMap -> succeededFuture(kvMap.keySet())), timeout);
   }
 
   @Override
   public Collection<V> values() {
-    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.values())), timeout);
+    return completeAndGet(entries().compose(kvMap -> succeededFuture(kvMap.values())), timeout);
   }
 
   @Override
   public Set<Entry<K, V>> entrySet() {
-    return toSync(entries().compose(kvMap -> succeededFuture(kvMap.entrySet())), timeout);
+    return completeAndGet(entries().compose(kvMap -> succeededFuture(kvMap.entrySet())), timeout);
   }
 }

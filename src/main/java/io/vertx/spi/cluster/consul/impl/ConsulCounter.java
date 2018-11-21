@@ -3,9 +3,7 @@ package io.vertx.spi.cluster.consul.impl;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
 import io.vertx.core.shareddata.Counter;
-import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.KeyValue;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -34,7 +32,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   // key to access counter.
   private final String consulKey;
 
-  public ConsulCounter(String name, CmContext context) {
+  public ConsulCounter(String name, ConsulMapContext context) {
     super("__vertx.counters", context);
     this.consulKey = keyPath(name);
   }

@@ -21,7 +21,7 @@ import static io.vertx.core.Future.succeededFuture;
  */
 public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K, V> {
 
-  public ConsulAsyncMap(String name, CmContext context) {
+  public ConsulAsyncMap(String name, ConsulMapContext context) {
     super(name, context);
   }
 
