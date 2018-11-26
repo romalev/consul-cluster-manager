@@ -27,12 +27,12 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
 
   @Override
   public int size() {
-    return completeAndGet(consulKeys().compose(list -> succeededFuture(list.size())), timeout);
+    return completeAndGet(plainKeys().compose(list -> succeededFuture(list.size())), timeout);
   }
 
   @Override
   public boolean isEmpty() {
-    return completeAndGet(consulKeys().compose(list -> succeededFuture(list.isEmpty())), timeout);
+    return completeAndGet(plainKeys().compose(list -> succeededFuture(list.isEmpty())), timeout);
   }
 
   @Override
@@ -62,7 +62,7 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   public V remove(Object key) {
     return completeAndGet(getValue((K) key).compose(v -> {
       if (v == null) return succeededFuture();
-      else return delete((K) key).compose(aBoolean -> {
+      else return deleteValue((K) key).compose(aBoolean -> {
         if (aBoolean) {
           return succeededFuture(v);
         } else return Future.failedFuture("[" + mapContext.getNodeId() + "]" + " failed to remove an entry by K: " + key);

@@ -26,69 +26,48 @@ public final class ConsulMapContext implements AutoCloseable {
   private Queue<Watch<KeyValueList>> watchQueue = new ConcurrentLinkedQueue<>();
 
   public ConsulMapContext setVertx(Vertx vertx) {
-    Objects.requireNonNull(vertx);
-    this.vertx = vertx;
+    this.vertx = Objects.requireNonNull(vertx);
     return this;
   }
 
   public ConsulMapContext initConsulClient() {
-    Objects.requireNonNull(vertx);
-    Objects.requireNonNull(consulClientOptions);
-    this.consulClient = ConsulClient.create(vertx, consulClientOptions);
+    this.consulClient = ConsulClient.create(Objects.requireNonNull(vertx), Objects.requireNonNull(consulClientOptions));
     return this;
   }
 
-  public ConsulMapContext reInitConsulClient() {
-    Objects.requireNonNull(consulClient);
-    try {
-      consulClient.close();
-    } catch (IllegalStateException e) {
-
-    }
-    return initConsulClient();
-  }
-
   public ConsulMapContext setNodeId(String nodeId) {
-    Objects.requireNonNull(nodeId);
-    this.nodeId = nodeId;
+    this.nodeId = Objects.requireNonNull(nodeId);
     return this;
   }
 
   public ConsulMapContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
-    Objects.requireNonNull(consulClientOptions);
-    this.consulClientOptions = consulClientOptions;
+    this.consulClientOptions = Objects.requireNonNull(consulClientOptions);
     return this;
   }
 
   public ConsulMapContext setEphemeralSessionId(String sessionId) {
-    Objects.requireNonNull(sessionId);
-    this.ephemeralSessionId = sessionId;
+    this.ephemeralSessionId = Objects.requireNonNull(sessionId);
     return this;
   }
 
   public String getNodeId() {
-    Objects.requireNonNull(nodeId);
-    return nodeId;
+    return Objects.requireNonNull(nodeId);
   }
 
   public Vertx getVertx() {
-    Objects.requireNonNull(vertx);
-    return vertx;
+    return Objects.requireNonNull(vertx);
   }
 
   public ConsulClient getConsulClient() {
-    Objects.requireNonNull(consulClient);
-    return consulClient;
+    return Objects.requireNonNull(consulClient);
   }
 
   public ConsulClientOptions getConsulClientOptions() {
-    Objects.requireNonNull(consulClientOptions);
-    return consulClientOptions;
+    return Objects.requireNonNull(consulClientOptions);
   }
 
   public String getEphemeralSessionId() {
-    Objects.requireNonNull(ephemeralSessionId);
-    return ephemeralSessionId;
+    return Objects.requireNonNull(ephemeralSessionId);
   }
 
   public Watch<KeyValueList> createAndGetWatch(String name) {

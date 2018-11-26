@@ -49,7 +49,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
 
   private static final Logger log = LoggerFactory.getLogger(ConsulClusterManager.class);
   private static final String HA_INFO_MAP_NAME = "__vertx.haInfo";
-  private final static String NODES_MAP_NAME = "__vertx.nodes";
+  private static final String NODES_MAP_NAME = "__vertx.nodes";
+  private static final String SERVICE_NAME = "vert.x-cluster-manager";
   private static final String TCP_CHECK_INTERVAL = "10s";
 
   private final Map<String, Lock> locks = new ConcurrentHashMap<>();
@@ -228,7 +229,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     if (!active) {
       active = true;
       mapContext.initConsulClient();
-      createTcpServer()
+      deregisterFailingTcpChecks()
+        .compose(aVoid -> createTcpServer())
         .compose(aVoid -> registerService())
         .compose(aVoid -> registerTcpCheck())
         .compose(aVoid ->
@@ -284,7 +286,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
 
       nodeRemoveFuture
         .compose(aVoid -> destroySession(mapContext.getEphemeralSessionId()))
-        .compose(aVoid -> deregisterNode())
+        .compose(aVoid -> deregisterService())
         .compose(aVoid -> deregisterTcpCheck())
         .compose(aVoid -> {
           tcpServer.close();
@@ -311,7 +313,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * @throws InterruptedException
    */
   private void addLocalNode(JsonObject details) throws InterruptedException {
-    completeAndGet(putConsulValue(
+    completeAndGet(putPlainValue(
       keyPath(mapContext.getNodeId()), details.encode(), new KeyValueOptions().setAcquireSession(mapContext.getEphemeralSessionId())
     ), 30_000);
     nodeAddedLatch.await(20, TimeUnit.SECONDS);
@@ -323,7 +325,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * @throws InterruptedException
    */
   public void removeLocalNode() throws InterruptedException {
-    completeAndGet(deleteConsulValue(keyPath(mapContext.getNodeId())), 30_000);
+    completeAndGet(deleteValueByPlainKey(keyPath(mapContext.getNodeId())), 30_000);
     nodeAddedLatch.await(20, TimeUnit.SECONDS);
   }
 
@@ -331,7 +333,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * @return true - cluster is empty, false otherwise.
    */
   private boolean isClusterEmpty() {
-    return completeAndGet(consulKeys().compose(clusterNodes -> Future.succeededFuture(clusterNodes.isEmpty())), 30_000);
+    return completeAndGet(plainKeys().compose(clusterNodes -> Future.succeededFuture(clusterNodes.isEmpty())), 30_000);
   }
 
   @Override
@@ -400,17 +402,16 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   }
 
   /**
-   * Gets the vertx node's dedicated service registered within consul agent.
-   * TODO: this might get changed.
+   * Registers central @{code SERVICE_NAME} service that is dedicated to vert.x cluster management.
+   *
+   * @return {@link Future} holding the result.
    */
   private Future<Void> registerService() {
     Future<Void> future = Future.future();
     ServiceOptions serviceOptions = new ServiceOptions();
-    serviceOptions.setName(mapContext.getNodeId());
-    serviceOptions.setAddress(nodeTcpAddress.getString("host"));
-    serviceOptions.setPort(nodeTcpAddress.getInteger("port"));
+    serviceOptions.setName(SERVICE_NAME);
     serviceOptions.setTags(Collections.singletonList("vertx-clustering"));
-    serviceOptions.setId(mapContext.getNodeId());
+    serviceOptions.setId(SERVICE_NAME);
 
     mapContext.getConsulClient().registerService(serviceOptions, asyncResult -> {
       if (asyncResult.failed()) {
@@ -422,34 +423,11 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   }
 
   /**
-   * Gets the node's tcp check registered within consul .
-   */
-  private Future<Void> registerTcpCheck() {
-    Future<Void> future = Future.future();
-    CheckOptions checkOptions = new CheckOptions()
-      .setName(checkId)
-      .setNotes("This check is dedicated to service with id: " + mapContext.getNodeId())
-      .setId(checkId)
-      .setTcp(nodeTcpAddress.getString("host") + ":" + nodeTcpAddress.getInteger("port"))
-      .setServiceId(mapContext.getNodeId())
-      .setInterval(TCP_CHECK_INTERVAL)
-      .setDeregisterAfter("10s") // it is still going to be 1 minute.
-      .setStatus(CheckStatus.PASSING);
-    mapContext.getConsulClient().registerCheck(checkOptions, result -> {
-      if (result.failed()) {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register check: " + checkOptions.getId(), result.cause());
-        future.fail(result.cause());
-      } else future.complete();
-    });
-    return future;
-  }
-
-  /**
-   * Gets the vertx node de-registered from consul cluster.
+   * Deregisters central vert.x cluster managing @{code SERVICE_NAME} service.
    *
-   * @return completed future if vertx node has been successfully de-registered from consul cluster, failed future - otherwise.
+   * @return {@link Future} holding the result.
    */
-  private Future<Void> deregisterNode() {
+  private Future<Void> deregisterService() {
     Future<Void> future = Future.future();
     mapContext.getConsulClient().deregisterService(mapContext.getNodeId(), event -> {
       if (event.failed()) {
@@ -461,7 +439,39 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   }
 
   /**
-   * Gets the node's tcp check de-registered in consul.
+   * Register tcp check (dedicated to vert.x node) in consul.
+   * Gets the node's tcp check registered within consul.
+   * These checks make an TCP connection attempt every Interval (in our case this {@code TCP_CHECK_INTERVAL}) to the specified IP/hostname and port.
+   * The status of the service depends on whether the connection attempt is successful (ie - the port is currently accepting connections).
+   * If the connection is accepted, the status is success, otherwise the status is critical.
+   * In the case of a hostname that resolves to both IPv4 and IPv6 addresses, an attempt will be made to both addresses,
+   * and the first successful connection attempt will result in a successful check.
+   *
+   * @return {@link Future} holding the result.
+   */
+  private Future<Void> registerTcpCheck() {
+    Future<Void> future = Future.future();
+    CheckOptions checkOptions = new CheckOptions()
+      .setName(checkId)
+      .setNotes("This check is dedicated to service with id: " + mapContext.getNodeId())
+      .setId(checkId)
+      .setTcp(nodeTcpAddress.getString("host") + ":" + nodeTcpAddress.getInteger("port"))
+      .setServiceId(SERVICE_NAME)
+      .setInterval(TCP_CHECK_INTERVAL)
+      .setStatus(CheckStatus.PASSING);
+    mapContext.getConsulClient().registerCheck(checkOptions, result -> {
+      if (result.failed()) {
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register check: " + checkOptions.getId(), result.cause());
+        future.fail(result.cause());
+      } else future.complete();
+    });
+    return future;
+  }
+
+  /**
+   * Deregisters vert.x node's tcp check.
+   *
+   * @return {@link Future} holding the result.
    */
   private Future<Void> deregisterTcpCheck() {
     Future<Void> future = Future.future();
@@ -473,5 +483,24 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       }
     });
     return future;
+  }
+
+  /**
+   * Tries to deregister all failing tcp checks from {@code SERVICE_NAME}.
+   */
+  private Future<Void> deregisterFailingTcpChecks() {
+    Future<CheckList> checkListFuture = Future.future();
+    mapContext.getConsulClient().healthChecks(SERVICE_NAME, checkListFuture.completer());
+    return checkListFuture.compose(checkList -> {
+      List<Future> futures = new ArrayList<>();
+      checkList.getList().forEach(check -> {
+        if (check.getStatus() == CheckStatus.CRITICAL) {
+          Future<Void> future = Future.future();
+          mapContext.getConsulClient().deregisterCheck(check.getId(), future.completer());
+          futures.add(future);
+        }
+      });
+      return CompositeFuture.all(futures).compose(compositeFuture -> Future.succeededFuture());
+    });
   }
 }
