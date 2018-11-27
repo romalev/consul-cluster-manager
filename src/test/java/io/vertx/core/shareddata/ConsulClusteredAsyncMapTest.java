@@ -7,7 +7,6 @@ import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -48,46 +47,6 @@ public class ConsulClusteredAsyncMapTest extends ClusteredAsyncMapTest {
     super.after();
   }
 
-  /**
-   * Consul restriction: TTL value (on entries) must be between 10s and 86400s currently. [Invalidation-time is twice the TTL time](https://github.com/hashicorp/consul/issues/1172)
-   * this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl.
-   */
-  @Test
-  public void testMapPutTtl() {
-//    getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map -> {
-//      map.put("pipo", "molo", 10, onSuccess(vd -> {
-//        vertx.setTimer(20000, l -> {
-//          getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map2 -> {
-//            map2.get("pipo", onSuccess(res -> {
-//              assertNull(res);
-//              testComplete();
-//            }));
-//          }));
-//        });
-//      }));
-//    }));
-    testComplete();
-    await();
-  }
-
-  @Test
-  public void testMapPutIfAbsentTtl() {
-//    getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map -> {
-//      map.putIfAbsent("pipo", "molo", 10, onSuccess(vd -> {
-//        assertNull(vd);
-//        vertx.setTimer(20000, l -> {
-//          getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map2 -> {
-//            map2.get("pipo", onSuccess(res -> {
-//              assertNull(res);
-//              testComplete();
-//            }));
-//          }));
-//        });
-//      }));
-//    }));
-    testComplete();
-    await();
-  }
 
   private ConsulClientOptions getConsulClientOptions() {
     return new ConsulClientOptions()
