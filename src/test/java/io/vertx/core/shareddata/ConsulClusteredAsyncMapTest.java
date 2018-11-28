@@ -7,6 +7,7 @@ import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -47,6 +48,41 @@ public class ConsulClusteredAsyncMapTest extends ClusteredAsyncMapTest {
     super.after();
   }
 
+  @Test
+  public void testMapPutIfAbsentTtl() {
+    getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map -> {
+      map.putIfAbsent("pipo", "molo", 10, onSuccess(vd -> {
+        assertNull(vd);
+        vertx.setTimer(150, l -> {
+          System.out.println("Getting is executed");
+          getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map2 -> {
+            map2.get("pipo", onSuccess(res -> {
+              assertNull(res);
+              testComplete();
+            }));
+          }));
+        });
+      }));
+    }));
+    await();
+  }
+
+  @Test
+  public void testMapPutTtl() {
+    getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map -> {
+      map.put("pipo", "molo", 10, onSuccess(vd -> {
+        vertx.setTimer(150, l -> {
+          getVertx().sharedData().<String, String>getAsyncMap("foo", onSuccess(map2 -> {
+            map2.get("pipo", onSuccess(res -> {
+              assertNull(res);
+              testComplete();
+            }));
+          }));
+        });
+      }));
+    }));
+    await();
+  }
 
   private ConsulClientOptions getConsulClientOptions() {
     return new ConsulClientOptions()
