@@ -58,6 +58,21 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   }
 
   /**
+   * Puts an entry to Consul KV store by taking into account additional options
+   * (these options are mainly used to make an entry ephemeral or to place TTL on an entry).
+   *
+   * @param k   - holds the key of an entry.
+   * @param v   - holds the value of an entry.
+   * @param ttl - time to live on entry.
+   * @return {@link Future}} containing result.
+   */
+  Future<Boolean> putValue(K k, V v, long ttl) {
+    return assertKeyAndValueAreNotNull(k, v)
+      .compose(aVoid -> asFutureString(k, v, mapContext.getNodeId(), ttl))
+      .compose(value -> putPlainValue(keyPath(k), value, null));
+  }
+
+  /**
    * Puts plain entry {@link String key} and {@link String value} to Consul KV store.
    *
    * @param key             - holds the consul key of an entry.
@@ -69,7 +84,12 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
     Future<Boolean> future = Future.future();
     mapContext.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + mapContext.getNodeId() + "] " + key + " put is " + resultHandler.result());
+        String traceMessage = "[" + mapContext.getNodeId() + "] " + key + " put is " + resultHandler.result();
+        if (keyValueOptions != null) {
+          log.trace(traceMessage + " with : " + keyValueOptions.getAcquireSession());
+        } else {
+          log.trace(traceMessage);
+        }
         future.complete(resultHandler.result());
       } else {
         log.error("[" + mapContext.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
@@ -141,23 +161,23 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    * @return @return {@link Future}} containing result.
    */
   Future<Boolean> deleteValue(K key) {
-    return deleteValueByPlainKey(keyPath(key));
+    return deleteValueByKeyPath(keyPath(key));
   }
 
   /**
-   * Removes an entry by key.
+   * Removes an entry by keyPath.
    *
-   * @param key - holds the plain {@link String} key.
+   * @param keyPath - holds the plain {@link String} keyPath.
    * @return @return {@link Future}} containing result.
    */
-  protected Future<Boolean> deleteValueByPlainKey(String key) {
+  protected Future<Boolean> deleteValueByKeyPath(String keyPath) {
     Future<Boolean> result = Future.future();
-    mapContext.getConsulClient().deleteValue(key, resultHandler -> {
+    mapContext.getConsulClient().deleteValue(keyPath, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + mapContext.getNodeId() + "] " + key + " -> " + " remove is true.");
+        log.trace("[" + mapContext.getNodeId() + "] " + keyPath + " -> " + " remove is true.");
         result.complete(true);
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to remove an entry by key: " + key, result.cause());
+        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to remove an entry by keyPath: " + keyPath, result.cause());
         result.fail(resultHandler.cause());
       }
     });
@@ -266,7 +286,10 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    *
    * @param ttl - holds ttl in ms, this value must be between {@code 10s} and {@code 86400s} currently.
    * @return session id.
+   * <p>
+   * Note: method gets deprecated since vert.x cluster management SPI can't be satisfied with using plain consul sessions :(
    */
+  @Deprecated
   protected Future<String> getTtlSessionId(long ttl, K k) {
     if (ttl < 10000) {
       log.warn("[" + mapContext.getNodeId() + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");

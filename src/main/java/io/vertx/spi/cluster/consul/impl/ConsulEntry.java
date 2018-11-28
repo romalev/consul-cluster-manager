@@ -2,6 +2,7 @@ package io.vertx.spi.cluster.consul.impl;
 
 import java.io.Serializable;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Represents simple entry of any of the cluster maps located within consul kv store.
@@ -18,11 +19,13 @@ final class ConsulEntry<K, V> implements Serializable {
   final private K key;
   final private V value;
   final private String nodeId; // nodeId given consul entry belongs to
+  final private Optional<Long> ttl; // ttl on entry if present.
 
-  ConsulEntry(K key, V value, String nodeId) {
+  ConsulEntry(K key, V value, String nodeId, Optional<Long> ttl) {
     this.key = key;
     this.value = value;
     this.nodeId = nodeId;
+    this.ttl = ttl;
   }
 
   public K getKey() {
@@ -35,6 +38,10 @@ final class ConsulEntry<K, V> implements Serializable {
 
   public String getNodeId() {
     return nodeId;
+  }
+
+  public Optional<Long> getTtl() {
+    return ttl;
   }
 
   @Override

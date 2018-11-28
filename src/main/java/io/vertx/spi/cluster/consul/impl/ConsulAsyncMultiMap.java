@@ -222,7 +222,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   private Future<Boolean> nonCacheableDelete(K key, V value, ChoosableSet<V> from, String nodeId) {
     if (from.remove(value)) {
-      if (from.isEmpty()) return deleteValueByPlainKey(keyPathForAllByAddressAndByNodeId(key, nodeId));
+      if (from.isEmpty()) return deleteValueByKeyPath(keyPathForAllByAddressAndByNodeId(key, nodeId));
       else return addToConsulKv(key, toHashSet(from), nodeId);
     } else {
       return Future.succeededFuture(false);

@@ -35,9 +35,6 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
  * <p>
- * - TTL value (on entries) must be between 10s and 86400s currently. [Invalidation-time is twice the TTL time](https://github.com/hashicorp/consul/issues/1172)
- * this means actual time when ttl entry gets removed (expired) is doubled to what you will specify as a ttl.
- * <p>
  * TODO : do we really need to keep the service registered.
  * TODO: For ha to work correctly verify:
  * - do we need to keep the node id that belongs to the same node?
@@ -142,7 +139,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   @Override
   public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
     Future<AsyncMap<K, V>> futureAsyncMap = Future.future();
-    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, mapContext));
+    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, mapContext, this));
     futureAsyncMap.complete(asyncMap);
     futureAsyncMap.setHandler(asyncResultHandler);
   }
@@ -171,7 +168,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
         locks.put(name, lock);
         futureLock.complete(lock);
       } else {
-        throw new VertxException("Timed out waiting to get lock " + name);
+        futureLock.fail("Timed out waiting to get lock: " + name);
       }
     }, false, resultHandler);
   }
@@ -325,7 +322,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * @throws InterruptedException
    */
   public void removeLocalNode() throws InterruptedException {
-    completeAndGet(deleteValueByPlainKey(keyPath(mapContext.getNodeId())), 30_000);
+    completeAndGet(deleteValueByKeyPath(keyPath(mapContext.getNodeId())), 30_000);
     nodeAddedLatch.await(20, TimeUnit.SECONDS);
   }
 
