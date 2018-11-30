@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static io.vertx.core.Future.failedFuture;
 import static io.vertx.core.Future.succeededFuture;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -251,7 +252,22 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
           }, nodeAddFuture.completer());
           return nodeAddFuture;
         })
-        .setHandler(resultHandler);
+        .setHandler(nodeJoinedEvent -> {
+          if (nodeJoinedEvent.succeeded()) resultHandler.handle(succeededFuture());
+          else {
+            // undo - if node can't join the cluster then:
+            try {
+              shutdownTcpServer();
+              // this will trigger the remove of all ephemeral entries
+              if (Objects.nonNull(mapContext.getEphemeralSessionId()))
+                destroySession(mapContext.getEphemeralSessionId());
+              deregisterTcpCheck();
+              mapContext.close();
+            } finally {
+              resultHandler.handle(failedFuture(nodeJoinedEvent.cause()));
+            }
+          }
+        });
     } else {
       log.warn(mapContext.getNodeId() + " is NOT active.");
       resultHandler.handle(succeededFuture());
@@ -281,10 +297,9 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
 
       nodeRemoveFuture
         .compose(aVoid -> destroySession(mapContext.getEphemeralSessionId()))
-        .compose(aVoid -> deregisterService())
         .compose(aVoid -> deregisterTcpCheck())
+        .compose(aVoid -> shutdownTcpServer())
         .compose(aVoid -> {
-          tcpServer.close();
           mapContext.close();
           log.trace("[" + mapContext.getNodeId() + "] has left the cluster.");
           return Future.<Void>succeededFuture();
@@ -397,6 +412,16 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   }
 
   /**
+   * Shut downs CM tcp server.
+   */
+  private Future<Void> shutdownTcpServer() {
+    Future<Void> future = Future.future();
+    if (tcpServer != null) tcpServer.close(future.completer());
+    else future.complete();
+    return future;
+  }
+
+  /**
    * Registers central @{code SERVICE_NAME} service that is dedicated to vert.x cluster management.
    *
    * @return {@link Future} holding the result.
@@ -412,22 +437,6 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       if (asyncResult.failed()) {
         log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register node's service.", asyncResult.cause());
         future.fail(asyncResult.cause());
-      } else future.complete();
-    });
-    return future;
-  }
-
-  /**
-   * Deregisters central vert.x cluster managing @{code SERVICE_NAME} service.
-   *
-   * @return {@link Future} holding the result.
-   */
-  private Future<Void> deregisterService() {
-    Future<Void> future = Future.future();
-    mapContext.getConsulClient().deregisterService(mapContext.getNodeId(), event -> {
-      if (event.failed()) {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to unregister node.", event.cause());
-        future.fail(event.cause());
       } else future.complete();
     });
     return future;
