@@ -58,21 +58,6 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   }
 
   /**
-   * Puts an entry to Consul KV store by taking into account additional options
-   * (these options are mainly used to make an entry ephemeral or to place TTL on an entry).
-   *
-   * @param k   - holds the key of an entry.
-   * @param v   - holds the value of an entry.
-   * @param ttl - time to live on entry.
-   * @return {@link Future}} containing result.
-   */
-  Future<Boolean> putValue(K k, V v, long ttl) {
-    return assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> asFutureString(k, v, mapContext.getNodeId(), ttl))
-      .compose(value -> putPlainValue(keyPath(k), value, null));
-  }
-
-  /**
    * Puts plain entry {@link String key} and {@link String value} to Consul KV store.
    *
    * @param key             - holds the consul key of an entry.

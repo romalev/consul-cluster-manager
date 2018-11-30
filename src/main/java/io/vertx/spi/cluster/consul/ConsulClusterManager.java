@@ -35,10 +35,6 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
  * <p>
- * TODO : do we really need to keep the service registered.
- * TODO: For ha to work correctly verify:
- * - do we need to keep the node id that belongs to the same node?
- * - order in which watcher accepts updates from consul kv.
  *
  * @author Roman Levytskyi
  */
@@ -69,6 +65,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * AND
    * - consul watch has sent notifications to other nodes about new node.
    * This approach is to be clarified.
+   * Note: question was raised in consul google groups: https://groups.google.com/forum/#!topic/consul-tool/A0yJV0EKclw
+   * so far no answers.
    */
   private final CountDownLatch nodeAddedLatch = new CountDownLatch(1);
   private final CountDownLatch nodeRemovedLatch = new CountDownLatch(1);
@@ -321,7 +319,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    *
    * @throws InterruptedException
    */
-  public void removeLocalNode() throws InterruptedException {
+  private void removeLocalNode() throws InterruptedException {
     completeAndGet(deleteValueByKeyPath(keyPath(mapContext.getNodeId())), 30_000);
     nodeAddedLatch.await(20, TimeUnit.SECONDS);
   }

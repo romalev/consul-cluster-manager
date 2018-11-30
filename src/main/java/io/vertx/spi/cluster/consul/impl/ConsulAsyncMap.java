@@ -8,7 +8,6 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.core.shareddata.LocalMap;
-import io.vertx.core.shareddata.Lock;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -34,7 +33,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
   public ConsulAsyncMap(String name, ConsulMapContext context, ClusterManager clusterManager) {
     super(name, context);
-    this.ttlMonitor = new TTLMonitor(mapContext.getVertx(), clusterManager, mapContext.getNodeId());
+    this.ttlMonitor = new TTLMonitor(mapContext.getVertx(), clusterManager, name, mapContext.getNodeId());
     startListening();
   }
 
@@ -47,7 +46,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
 
   @Override
   public void put(K k, V v, Handler<AsyncResult<Void>> completionHandler) {
-    putValue(k, v)
+    putValue(k, v, null, Optional.empty())
       .compose(putSucceeded -> putSucceeded ? Future.<Void>succeededFuture() : failedFuture(k.toString() + "wasn't put to: " + name))
       .setHandler(completionHandler);
   }
@@ -55,7 +54,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
   @Override
   public void put(K k, V v, long ttl, Handler<AsyncResult<Void>> completionHandler) {
     assertKeyAndValueAreNotNull(k, v)
-      .compose(id -> putValue(k, v, ttl))
+      .compose(id -> putValue(k, v, null, Optional.of(ttl)))
       .compose(putSucceeded -> putSucceeded ? succeededFuture() : Future.<Void>failedFuture(k.toString() + "wasn't put to " + name))
       .setHandler(completionHandler);
   }
@@ -183,38 +182,12 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
       log.debug("[" + mapContext.getNodeId() + "] : " + "applying a ttl monitor on entry: " + event.getEntry().getKey());
       ttlMonitor.apply(
         event.getEntry().getKey(),
-        () -> deleteValueByKeyPath(event.getEntry().getKey()),
         asTtlConsulEntry(event.getEntry().getValue()));
     }
   }
 
-  @Override
-  protected Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
-    return super.putValue(k, v, keyValueOptions)
-      .compose(result ->
-        ttlMonitor.apply(keyPath(k), () -> deleteValue(k), Optional.empty())
-          .compose(aVoid -> succeededFuture(result)));
-  }
-
-  @Override
-  protected Future<Boolean> putValue(K k, V v, long ttl) {
-    return super.putValue(k, v, ttl)
-      .compose(result ->
-        ttlMonitor.apply(keyPath(k), () -> deleteValue(k), Optional.of(ttl))
-          .compose(aVoid -> succeededFuture(result)));
-  }
-
-  private Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions, Optional<Long> ttl) {
-    Long ttlValue = ttl.map(aLong -> ttl.get()).orElse(null);
-    return asFutureString(k, v, mapContext.getNodeId(), ttlValue)
-      .compose(value -> putPlainValue(keyPath(k), value, keyValueOptions))
-      .compose(result ->
-        ttlMonitor.apply(keyPath(k), () -> deleteValue(k), ttl)
-          .compose(aVoid -> succeededFuture(result)));
-  }
-
   /**
-   * Puts the entry only if there is no entry with the key already present. If key already present then the existing
+   * Puts an entry only if there is no entry with the key already present. If key already present then the existing
    * value will be returned to the handler, otherwise null.
    *
    * @param k - holds the entry's key.
@@ -225,11 +198,27 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     // set the Check-And-Set index. If the index is {@code 0}, Consul will only put the key if it does not already exist.
     KeyValueOptions casOpts = new KeyValueOptions().setCasIndex(0);
     return putValue(k, v, casOpts, ttl).compose(putSucceeded -> {
-      if (putSucceeded) {
-        return ttlMonitor.apply(keyPath(k), () -> deleteValue(k), ttl)
-          .compose(aVoid -> succeededFuture());
-      } else return getValue(k); // key already present
+      if (putSucceeded) return succeededFuture();
+      else return getValue(k); // key already present
     });
+  }
+
+  /**
+   * Puts an entry by taking into account TTL.
+   *
+   * @param k               - holds the entry's key.
+   * @param v               - holds the entry's value.
+   * @param keyValueOptions - cas, this might be null.
+   * @param ttl             - ttl on entry in ms.
+   * @return {@link Future} holding the result.
+   */
+  private Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions, Optional<Long> ttl) {
+    Long ttlValue = ttl.map(aLong -> ttl.get()).orElse(null);
+    return asFutureString(k, v, mapContext.getNodeId(), ttlValue)
+      .compose(value -> putPlainValue(keyPath(k), value, keyValueOptions))
+      .compose(result ->
+        ttlMonitor.apply(keyPath(k), ttl)
+          .compose(aVoid -> succeededFuture(result)));
   }
 
   /**
@@ -254,52 +243,54 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private final ClusterManager clusterManager;
     private final LocalMap<String, Long> timerMap;
     private final String nodeId;
+    private final String mapName;
 
-    TTLMonitor(Vertx vertx, ClusterManager clusterManager, String nodeId) {
+
+    TTLMonitor(Vertx vertx, ClusterManager clusterManager, String mapName, String nodeId) {
       this.vertx = vertx;
       this.timerMap = vertx.sharedData().getLocalMap("timerMap");
       this.clusterManager = clusterManager;
+      this.mapName = mapName;
       this.nodeId = nodeId;
     }
 
-    Future<Void> apply(String keyPath, Runnable action, Optional<Long> ttl) {
-      Future<Void> applied = Future.future();
+    Future<Void> apply(String keyPath, Optional<Long> ttl) {
+      cancelTimer(keyPath);
       if (ttl.isPresent()) {
-        log.debug("[" + nodeId + "] : " + "applying ttl monitor on: " + keyPath + " with ttl: " + ttl.get());
-        clusterManager.getLockWithTimeout("ttlLockOn/" + keyPath, 50, lockObtainedEvent -> {
-          if (lockObtainedEvent.succeeded()) {
-            long timerId = setTimer(keyPath, action, ttl.get(), lockObtainedEvent.result());
-            timerMap.put(keyPath, timerId);
-            applied.complete();
-          } else {
-            // other node has already obtained a lock.
-            applied.complete();
-          }
-        });
+        log.debug("[" + nodeId + "] : " + "applying ttl monitoring on: " + keyPath + " with ttl: " + ttl.get());
+        long timerId = setTimer(keyPath, ttl.get());
+        timerMap.put(keyPath, timerId);
       } else {
         // there's no need to monitor an entry -> no ttl is there.
-        // try to remove keyPath from timerMap since
-        Long timerId = timerMap.get(keyPath);
-        if (Objects.nonNull(timerId)) {
-          vertx.cancelTimer(timerId);
-          timerMap.remove(keyPath);
-          log.debug("[" + nodeId + "] : " + "cancelling ttl monitor on entry: " + keyPath);
-        }
-        applied.complete();
+        // try to remove keyPath from timerMap
+        cancelTimer(keyPath);
       }
-      return applied;
+      return Future.succeededFuture();
     }
 
-    private long setTimer(String keyPath, Runnable action, long ttl, Lock lock) {
+    private long setTimer(String keyPath, long ttl) {
       return vertx.setTimer(ttl, event -> {
-        try {
-          action.run();
-        } finally {
-          log.debug("[" + nodeId + "] : " + "ttl monitor executes deleting of: " + keyPath + " since ttl: " + ttl + " got expired.");
-          lock.release();
-          timerMap.remove(keyPath);
-        }
+        clusterManager.getLockWithTimeout("ttlLockOn/" + keyPath, 1000, lockObtainedEvent -> {
+          if (lockObtainedEvent.succeeded()) {
+            clusterManager.getAsyncMap(mapName, asyncMapEvent -> {
+              ConsulAsyncMap asyncMap = (ConsulAsyncMap) asyncMapEvent.result();
+              asyncMap.deleteValueByKeyPath(keyPath).setHandler(deleteResult -> {
+                lockObtainedEvent.result().release();
+                timerMap.remove(keyPath);
+              });
+            });
+          }
+        });
       });
+    }
+
+    private void cancelTimer(String keyPath) {
+      Long timerId = timerMap.get(keyPath);
+      if (Objects.nonNull(timerId)) {
+        vertx.cancelTimer(timerId);
+        timerMap.remove(keyPath);
+        log.debug("[" + nodeId + "] : " + "cancelling ttl monitoring on entry: " + keyPath);
+      }
     }
   }
 }

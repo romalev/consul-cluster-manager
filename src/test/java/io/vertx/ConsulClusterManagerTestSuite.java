@@ -5,6 +5,7 @@ import io.vertx.core.ConsulClusteredHATest;
 import io.vertx.core.eventbus.ConsulApClusteredEventBusTest;
 import io.vertx.core.eventbus.ConsulCpClusteredEventBusTest;
 import io.vertx.core.shareddata.*;
+import io.vertx.ext.web.sstore.ConsulClusteredSessionHandlerTest;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMapTest;
 import io.vertx.spi.cluster.consul.impl.ConsumerRoundRobinTest;
 import org.junit.runner.RunWith;
@@ -36,10 +37,9 @@ import org.junit.runners.Suite;
   // EVENT BUS
   ConsulCpClusteredEventBusTest.class,
   ConsulApClusteredEventBusTest.class,
+  ConsulClusteredSessionHandlerTest.class
   // TODO: get tests below done!
   // ConsulFaultToleranceTest.class,
-  // ConsulClusteredSessionHandlerTest.class
-
 })
 public class ConsulClusterManagerTestSuite {
 }
