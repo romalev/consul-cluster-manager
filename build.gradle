@@ -16,7 +16,7 @@ repositories {
 ext {
   junitVersion = "4.12"
   vertxVersion = "3.5.4"
-  vertxSnaphotVersion = "3.6.0-SNAPSHOT"
+  vertxSnaphotVersion = "3.6.0"
   logbackVersion = "1.2.3"
 }
 
