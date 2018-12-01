@@ -8,6 +8,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.shareddata.AsyncMap;
 import io.vertx.core.shareddata.LocalMap;
+import io.vertx.core.shareddata.Lock;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.ext.consul.KeyValueOptions;
 
@@ -241,6 +242,11 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
     private final static Logger log = LoggerFactory.getLogger(TTLMonitor.class);
     private final Vertx vertx;
     private final ClusterManager clusterManager;
+    /*
+     * TTL monitor needs to hold a state - i.e. some sort of correlation between scheduled timers and
+     * corresponding keypaths on which ttl action is gonna get executed. We use vert.x {@link LocalMap}
+     * to hold this state. Having this allows us to either stop OR reschedule an appropriate timer.
+     */
     private final LocalMap<String, Long> timerMap;
     private final String nodeId;
     private final String mapName;
@@ -254,36 +260,60 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
       this.nodeId = nodeId;
     }
 
+    /**
+     * Monitors specified keypath on TTL.
+     * If ttl is not present then we attempt to cancel or reschedule the timer (if it was already scheduled on specified keypath.)
+     * If ttl is present we attempt to get a lock and schedule an appropriate vert.x scheduler.
+     *
+     * @param keyPath represents consul key path that will be monitored.
+     * @param ttl     time to live in ms.
+     * @return
+     */
     Future<Void> apply(String keyPath, Optional<Long> ttl) {
+      Future<Void> future = Future.future();
       cancelTimer(keyPath);
       if (ttl.isPresent()) {
         log.debug("[" + nodeId + "] : " + "applying ttl monitoring on: " + keyPath + " with ttl: " + ttl.get());
-        long timerId = setTimer(keyPath, ttl.get());
-        timerMap.put(keyPath, timerId);
+        String lockName = "ttlLockOn/" + keyPath;
+        clusterManager.getLockWithTimeout(lockName, 50, lockObtainedEvent -> {
+          setTimer(keyPath, ttl.get(), lockName, lockObtainedEvent);
+          future.complete();
+        });
       } else {
         // there's no need to monitor an entry -> no ttl is there.
         // try to remove keyPath from timerMap
         cancelTimer(keyPath);
+        future.complete();
       }
-      return Future.succeededFuture();
+      return future;
     }
 
-    private long setTimer(String keyPath, long ttl) {
-      return vertx.setTimer(ttl, event -> {
-        clusterManager.getLockWithTimeout("ttlLockOn/" + keyPath, 1000, lockObtainedEvent -> {
-          if (lockObtainedEvent.succeeded()) {
-            clusterManager.getAsyncMap(mapName, asyncMapEvent -> {
-              ConsulAsyncMap asyncMap = (ConsulAsyncMap) asyncMapEvent.result();
-              asyncMap.deleteValueByKeyPath(keyPath).setHandler(deleteResult -> {
-                lockObtainedEvent.result().release();
-                timerMap.remove(keyPath);
-              });
-            });
-          }
-        });
+    /**
+     * Schedules a timer for ttl action to take place.
+     *
+     * @param keyPath   consul key path.
+     * @param ttl       the delay in milliseconds, after which the timer will fire.
+     * @param lockName  lock name that is being put to execute the ttl action.
+     * @param lockEvent lock event holding an actual lock.
+     */
+    private void setTimer(String keyPath, long ttl, String lockName, AsyncResult<Lock> lockEvent) {
+      long timerId = vertx.setTimer(ttl, event -> {
+        if (lockEvent.succeeded()) {
+          deleteTTLEntry(keyPath, lockEvent.result());
+        } else {
+          clusterManager.getLockWithTimeout(lockName, 1000, lockObtainedEvent -> {
+            if (lockObtainedEvent.succeeded()) {
+              deleteTTLEntry(keyPath, lockObtainedEvent.result());
+            }
+          });
+        }
       });
+      timerMap.put(keyPath, timerId);
     }
 
+    /**
+     * Cancels vert.x timer and updates timer map accordingly.
+     */
     private void cancelTimer(String keyPath) {
       Long timerId = timerMap.get(keyPath);
       if (Objects.nonNull(timerId)) {
@@ -291,6 +321,25 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
         timerMap.remove(keyPath);
         log.debug("[" + nodeId + "] : " + "cancelling ttl monitoring on entry: " + keyPath);
       }
+    }
+
+    /**
+     * Deletes an entry that ttl was bound to.
+     * We lock delete operation and once delete is executed:
+     * 1) we release the lock.
+     * 2) we update timer map by removing timer id that has triggered delete operation.
+     *
+     * @param keyPath entry's keypath in consul kv store.
+     * @param lock    lock holding the delete operation.
+     */
+    private void deleteTTLEntry(String keyPath, Lock lock) {
+      clusterManager.getAsyncMap(mapName, asyncMapEvent -> {
+        ConsulAsyncMap asyncMap = (ConsulAsyncMap) asyncMapEvent.result();
+        asyncMap.deleteValueByKeyPath(keyPath).setHandler(deleteResult -> {
+          lock.release();
+          timerMap.remove(keyPath);
+        });
+      });
     }
   }
 }
