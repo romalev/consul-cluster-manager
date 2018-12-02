@@ -59,12 +59,15 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private final Set<String> nodes = new HashSet<>();
   /*
-   * We have to lock node added and node removed events to stay as much as possible transactionally in sync with consul kv store.
-   * We confirm that node has been added to cluster when:
-   * - an appropriate entry has been added to __vertx.nodes map
-   * AND
-   * - consul watch has sent notifications to other nodes about new node.
-   * This approach is to be clarified.
+   * We have to lock node joining the cluster and node leaving the cluster operations
+   * to stay as much as possible transactionally in sync with consul kv store.
+   * Only one node joins the cluster at particular point in time. This is achieved through acquiring a lock.
+   * Given lock is held until the node (that got registered itself) receives an appropriate "NODE JOINED" event through consul watch
+   * about itself -> lock gets release then. Having this allow us to ensure :
+   * - nodeAdded and nodeRemoved are called on the nodeListener in the same order on the same nodes.
+   * - getNodes() always return same node list when nodeAdded and nodeRemoved are called on the nodeListener.
+   * Without locking we'd screw up an entire HA.
+   *
    * Note: question was raised in consul google groups: https://groups.google.com/forum/#!topic/consul-tool/A0yJV0EKclw
    * so far no answers.
    */
@@ -72,8 +75,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   private final static String NODE_LEAVING_LOCK_NAME = "nodeLeaving";
   private final AtomicReference<Lock> nodeJoiningLock = new AtomicReference<>();
   private final AtomicReference<Lock> nodeLeavingLock = new AtomicReference<>();
-  //private final CountDownLatch nodeAddedLatch = new CountDownLatch(1);
-  //private final CountDownLatch nodeRemovedLatch = new CountDownLatch(1);
+
   private final TaskQueue taskQueue = new TaskQueue();
   /*
    * Famous CAP theorem takes place here.
@@ -239,16 +241,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
               return succeededFuture();
             }))
         .compose(aVoid -> {
-          Future<Void> nodeAddFuture = Future.future();
-          // start a watch to listen for an updates on _vertx.nodes.
-          startListening();
-          mapContext.getVertx().executeBlocking(event -> {
-            if (isClusterEmpty()) {
-              getSyncMap(HA_INFO_MAP_NAME).clear();
-            }
-            event.complete();
-          }, nodeAddFuture.completer());
-          return nodeAddFuture;
+          startListening(); // start a watch to listen for an updates on _vertx.nodes.
+          return clearHaInfoMap();
         })
         .compose(aVoid -> addLocalNode(nodeTcpAddress))
         .setHandler(nodeJoinedEvent -> {
@@ -348,10 +342,25 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   }
 
   /**
-   * @return true - cluster is empty, false otherwise.
+   * Checks cluster on emptiness.
    */
-  private boolean isClusterEmpty() {
-    return completeAndGet(plainKeys().compose(clusterNodes -> Future.succeededFuture(clusterNodes.isEmpty())), 30_000);
+  private Future<Boolean> isClusterEmpty() {
+    return plainKeys().compose(clusterNodes -> Future.succeededFuture(clusterNodes.isEmpty()));
+  }
+
+  /**
+   * Clears out an entire HA_INFO map in case cluster is empty.
+   */
+  private Future<Void> clearHaInfoMap() {
+    return isClusterEmpty().compose(clusterEmpty -> {
+      if (clusterEmpty) {
+        Future<Void> clearHaInfoFuture = Future.future();
+        ((ConsulSyncMap) getSyncMap(HA_INFO_MAP_NAME)).clear(handler -> clearHaInfoFuture.complete());
+        return clearHaInfoFuture;
+      } else {
+        return Future.succeededFuture();
+      }
+    });
   }
 
   @Override
