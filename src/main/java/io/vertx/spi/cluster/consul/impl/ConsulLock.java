@@ -59,7 +59,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
     log.trace("[" + mapContext.getNodeId() + "]" + " is trying to obtain a lock on: " + lockName);
     boolean lockObtained = completeAndGet(obtain(), timeout);
     if (lockObtained) {
-      log.info("Lock on: " + lockName + " has been obtained.");
+      log.info("[" + mapContext.getNodeId() + "] has obtained lock on: " + lockName);
     }
     return lockObtained;
   }
@@ -67,9 +67,9 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
   @Override
   public void release() {
     destroySession(sessionId).setHandler(event -> {
-      if (event.succeeded()) log.info("Lock on: " + lockName + " has been released.");
+      if (event.succeeded()) log.info("[" + mapContext.getNodeId() + "] has released lock on: " + lockName);
       else
-        throw new VertxException("Failed to release a lock on: " + lockName + ". Lock might have been already released.", event.cause());
+        throw new VertxException("[" + mapContext.getNodeId() + "] - failed to release a lock on: " + lockName + ". Lock might have been already released.", event.cause());
     });
   }
 

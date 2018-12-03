@@ -21,8 +21,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static io.vertx.core.Future.failedFuture;
 import static io.vertx.core.Future.succeededFuture;
@@ -60,17 +59,23 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private final Set<String> nodes = new HashSet<>();
   /*
-   * We have to latch node added and node removed events to stay as much as possible transactionally in sync with consul kv store.
-   * We confirm that node has been added to cluster when:
-   * - an appropriate entry has been added to __vertx.nodes map
-   * AND
-   * - consul watch has sent notifications to other nodes about new node.
-   * This approach is to be clarified.
+   * We have to lock node joining the cluster and node leaving the cluster operations
+   * to stay as much as possible transactionally in sync with consul kv store.
+   * Only one node joins the cluster at particular point in time. This is achieved through acquiring a lock.
+   * Given lock is held until the node (that got registered itself) receives an appropriate "NODE JOINED" event through consul watch
+   * about itself -> lock gets release then. Having this allow us to ensure :
+   * - nodeAdded and nodeRemoved are called on the nodeListener in the same order on the same nodes with same node ids.
+   * - getNodes() always return same node list when nodeAdded and nodeRemoved are called on the nodeListener.
+   * Without locking we'd screw up an entire HA.
+   *
    * Note: question was raised in consul google groups: https://groups.google.com/forum/#!topic/consul-tool/A0yJV0EKclw
    * so far no answers.
    */
-  private final CountDownLatch nodeAddedLatch = new CountDownLatch(1);
-  private final CountDownLatch nodeRemovedLatch = new CountDownLatch(1);
+  private final static String NODE_JOINING_LOCK_NAME = "nodeJoining";
+  private final static String NODE_LEAVING_LOCK_NAME = "nodeLeaving";
+  private final AtomicReference<Lock> nodeJoiningLock = new AtomicReference<>();
+  private final AtomicReference<Lock> nodeLeavingLock = new AtomicReference<>();
+
   private final TaskQueue taskQueue = new TaskQueue();
   /*
    * Famous CAP theorem takes place here.
@@ -236,24 +241,13 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
               return succeededFuture();
             }))
         .compose(aVoid -> {
-          Future<Void> nodeAddFuture = Future.future();
-          // start a watch to listen for an updates on _vertx.nodes.
-          startListening();
-          mapContext.getVertx().executeBlocking(event -> {
-            if (isClusterEmpty()) {
-              getSyncMap(HA_INFO_MAP_NAME).clear();
-            }
-            try {
-              addLocalNode(nodeTcpAddress);
-            } catch (InterruptedException e) {
-              event.fail(e);
-            }
-            event.complete();
-          }, nodeAddFuture.completer());
-          return nodeAddFuture;
+          startListening(); // start a watch to listen for an updates on _vertx.nodes.
+          return clearHaInfoMap();
         })
+        .compose(aVoid -> addLocalNode(nodeTcpAddress))
         .setHandler(nodeJoinedEvent -> {
-          if (nodeJoinedEvent.succeeded()) resultHandler.handle(succeededFuture());
+          if (nodeJoinedEvent.succeeded())
+            resultHandler.handle(succeededFuture());
           else {
             // undo - if node can't join the cluster then:
             try {
@@ -284,18 +278,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       active = false;
       // forcibly release all lock being held by node.
       locks.values().forEach(Lock::release);
-
-      Future<Void> nodeRemoveFuture = Future.future();
-      mapContext.getVertx().executeBlocking(event -> {
-        try {
-          removeLocalNode();
-        } catch (InterruptedException e) {
-          event.fail(e);
-        }
-        event.complete();
-      }, nodeRemoveFuture.completer());
-
-      nodeRemoveFuture
+      removeLocalNode()
         .compose(aVoid -> destroySession(mapContext.getEphemeralSessionId()))
         .compose(aVoid -> deregisterTcpCheck())
         .compose(aVoid -> shutdownTcpServer())
@@ -320,30 +303,64 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * Adds local node to the cluster (new entry gets created within {@code NODES_MAP_NAME} where key is node id).
    *
    * @param details - IP address of node.
-   * @throws InterruptedException
    */
-  private void addLocalNode(JsonObject details) throws InterruptedException {
-    completeAndGet(putPlainValue(
-      keyPath(mapContext.getNodeId()), details.encode(), new KeyValueOptions().setAcquireSession(mapContext.getEphemeralSessionId())
-    ), 30_000);
-    nodeAddedLatch.await(20, TimeUnit.SECONDS);
+  private Future<Void> addLocalNode(JsonObject details) {
+    Future<Lock> lockFuture = Future.future();
+    getLockWithTimeout(NODE_JOINING_LOCK_NAME, 5000, lockFuture.completer());
+    return lockFuture.compose(aLock -> {
+      nodeJoiningLock.set(aLock);
+      return putPlainValue(
+        keyPath(mapContext.getNodeId()),
+        details.encode(),
+        new KeyValueOptions().setAcquireSession(mapContext.getEphemeralSessionId())
+      );
+    }).compose(aBoolean -> {
+      if (aBoolean) return Future.succeededFuture();
+      else {
+        nodeJoiningLock.get().release();
+        return Future.failedFuture("Node: " + mapContext.getNodeId() + "failed to join the cluster.");
+      }
+    });
   }
 
   /**
    * Removes local node from the cluster (existing entry gets removed from {@code NODES_MAP_NAME}).
-   *
-   * @throws InterruptedException
    */
-  private void removeLocalNode() throws InterruptedException {
-    completeAndGet(deleteValueByKeyPath(keyPath(mapContext.getNodeId())), 30_000);
-    nodeAddedLatch.await(20, TimeUnit.SECONDS);
+  private Future<Void> removeLocalNode() {
+    Future<Lock> lockFuture = Future.future();
+    getLockWithTimeout(NODE_LEAVING_LOCK_NAME, 5000, lockFuture.completer());
+    return lockFuture.compose(aLock -> {
+      nodeLeavingLock.set(aLock);
+      return deleteValueByKeyPath(keyPath(mapContext.getNodeId()));
+    }).compose(aBoolean -> {
+      if (aBoolean) return Future.succeededFuture();
+      else {
+        nodeLeavingLock.get().release();
+        return Future.failedFuture("Node: " + mapContext.getNodeId() + "failed to leave the cluster.");
+      }
+    });
   }
 
   /**
-   * @return true - cluster is empty, false otherwise.
+   * Checks cluster on emptiness.
    */
-  private boolean isClusterEmpty() {
-    return completeAndGet(plainKeys().compose(clusterNodes -> Future.succeededFuture(clusterNodes.isEmpty())), 30_000);
+  private Future<Boolean> isClusterEmpty() {
+    return plainKeys().compose(clusterNodes -> Future.succeededFuture(clusterNodes.isEmpty()));
+  }
+
+  /**
+   * Clears out an entire HA_INFO map in case cluster is empty.
+   */
+  private Future<Void> clearHaInfoMap() {
+    return isClusterEmpty().compose(clusterEmpty -> {
+      if (clusterEmpty) {
+        Future<Void> clearHaInfoFuture = Future.future();
+        ((ConsulSyncMap) getSyncMap(HA_INFO_MAP_NAME)).clear(handler -> clearHaInfoFuture.complete());
+        return clearHaInfoFuture;
+      } else {
+        return Future.succeededFuture();
+      }
+    });
   }
 
   @Override
@@ -355,8 +372,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
         if (added) {
           log.trace("[" + mapContext.getNodeId() + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
         }
-        if (nodeAddedLatch.getCount() == 1 && receivedNodeId.equals(mapContext.getNodeId())) {
-          nodeAddedLatch.countDown();
+        if (receivedNodeId.equals(mapContext.getNodeId())) {
+          nodeJoiningLock.get().release();
         }
         if (nodeListener != null && active) {
           VertxInternal vertxInternal = (VertxInternal) mapContext.getVertx();
@@ -373,8 +390,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
           log.trace("[" + mapContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has left the cluster.");
         }
 
-        if (nodeRemovedLatch.getCount() == 1 && receivedNodeId.equals(mapContext.getNodeId())) {
-          nodeRemovedLatch.countDown();
+        if (receivedNodeId.equals(mapContext.getNodeId())) {
+          nodeLeavingLock.get().release();
         }
         if (nodeListener != null && active) {
           VertxInternal vertxInternal = (VertxInternal) mapContext.getVertx();
