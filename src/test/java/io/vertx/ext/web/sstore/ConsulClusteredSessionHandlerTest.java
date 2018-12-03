@@ -6,14 +6,17 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
+import io.vertx.spi.cluster.consul.Utils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
+import org.junit.Test;
 
 import java.util.function.Consumer;
 
 public class ConsulClusteredSessionHandlerTest extends ClusteredSessionHandlerTest {
 
-  private final static int DEFAULT_PORT = 9898;
+  private final static int DEFAULT_PORT = Utils.getFreePort();
   private static int consulAgentPort = 8500;
 
   @BeforeClass
@@ -49,5 +52,12 @@ public class ConsulClusteredSessionHandlerTest extends ClusteredSessionHandlerTe
     return new JsonObject()
       .put("host", "localhost")
       .put("port", consulAgentPort);
+  }
+
+  @Override
+  @Test
+  @Ignore("Not supported")
+  public void testRetryTimeout() throws Exception {
+    super.testRetryTimeout();
   }
 }

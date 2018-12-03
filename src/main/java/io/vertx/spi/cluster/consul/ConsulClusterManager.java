@@ -55,7 +55,6 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   /*
    * A set that attempts to keep all cluster node's data locally cached. Cluster manager
    * watches the consul "__vertx.nodes" path, responds to update/create/delete events, pull down the data.
-   * IMPORTANT: it's not possible to stay transactionally in sync. You must be prepared for false-positives and false-negatives.
    */
   private final Set<String> nodes = new HashSet<>();
   /*
