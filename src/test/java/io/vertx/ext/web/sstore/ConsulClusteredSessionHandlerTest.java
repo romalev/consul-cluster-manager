@@ -2,8 +2,8 @@ package io.vertx.ext.web.sstore;
 
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
@@ -28,7 +28,7 @@ public class ConsulClusteredSessionHandlerTest extends ClusteredSessionHandlerTe
 
   @Override
   protected ClusterManager getClusterManager() {
-    return new ConsulClusterManager(getConsulClientOptions());
+    return new ConsulClusterManager(getClusterManagerOptions());
   }
 
   protected HttpServerOptions getHttpServerOptions() {
@@ -45,9 +45,9 @@ public class ConsulClusteredSessionHandlerTest extends ClusteredSessionHandlerTe
     testRequestBuffer(client, method, DEFAULT_PORT, path, requestAction, responseAction, statusCode, statusMessage, responseBodyBuffer, normalizeLineEndings);
   }
 
-  private ConsulClientOptions getConsulClientOptions() {
-    return new ConsulClientOptions()
-      .setPort(consulAgentPort)
-      .setHost("localhost");
+  private JsonObject getClusterManagerOptions() {
+    return new JsonObject()
+      .put("host", "localhost")
+      .put("port", consulAgentPort);
   }
 }

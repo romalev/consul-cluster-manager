@@ -1,7 +1,7 @@
 package io.vertx.core.shareddata;
 
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
@@ -24,10 +24,7 @@ public class ConsulClusteredAsynchronousLockTest extends ClusteredAsynchronousLo
 
   @Override
   protected ClusterManager getClusterManager() {
-    ConsulClientOptions options = new ConsulClientOptions()
-      .setPort(port)
-      .setHost("localhost");
-    return new ConsulClusterManager(options);
+    return new ConsulClusterManager(getConsulClusterManagerOptions());
   }
 
   @Test
@@ -38,5 +35,11 @@ public class ConsulClusteredAsynchronousLockTest extends ClusteredAsynchronousLo
   @Test
   public void testLockReleasedForKilledNode() throws Exception {
     super.testLockReleasedForKilledNode();
+  }
+
+  private JsonObject getConsulClusterManagerOptions() {
+    return new JsonObject()
+      .put("host", "localhost")
+      .put("port", port);
   }
 }

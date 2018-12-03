@@ -1,8 +1,8 @@
 package io.vertx.spi.cluster.consul.impl;
 
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import io.vertx.test.core.VertxTestBase;
@@ -34,10 +34,7 @@ public class ConsumerRoundRobinTest extends VertxTestBase {
 
   @Override
   protected ClusterManager getClusterManager() {
-    ConsulClientOptions options = new ConsulClientOptions()
-      .setPort(port)
-      .setHost("localhost");
-    return new ConsulClusterManager(options);
+    return new ConsulClusterManager(getClusterManagerOptions());
   }
 
 
@@ -89,6 +86,12 @@ public class ConsumerRoundRobinTest extends VertxTestBase {
       }
     }));
     await();
+  }
+
+  private JsonObject getClusterManagerOptions() {
+    return new JsonObject()
+      .put("host", "localhost")
+      .put("port", port);
   }
 
 }

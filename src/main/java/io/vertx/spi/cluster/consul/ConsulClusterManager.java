@@ -93,7 +93,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * To enable dirty reads (and prefer having better latency) set {@code preferConsistency} flag to FALSE.
    * Otherwise set {@code preferConsistency} flag to TRUE to enable stronger consistency level (i.e. disable internal caching and use consul kv store directly).
    */
-  private boolean preferConsistency = false;
+  private final boolean preferConsistency;
 
   private String checkId; // tcp consul check id
   private NetServer tcpServer; // dummy TCP server to receive and acknowledge heart beats messages from consul.
@@ -101,30 +101,36 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   private volatile boolean active; // identifies whether cluster manager is active or passive.
   private NodeListener nodeListener;
 
-  public ConsulClusterManager(final ConsulClientOptions options) {
+  /**
+   * Creates consul cluster manager instance with specified config.
+   * Example:
+   * <pre>
+   * JsonObject options = new JsonObject()
+   *  .put("host", "localhost")
+   *  .put("port", consulAgentPort)
+   *  .put("preferConsistency", true);
+   * </pre>
+   * If config key is not specified -> default configuration takes place:
+   * host -> localhost; port - 8500; preferConsistency - false
+   *
+   * @param config holds configuration for consul cluster manager client.
+   */
+  public ConsulClusterManager(final JsonObject config) {
     super(NODES_MAP_NAME, new ConsulMapContext());
-    Objects.requireNonNull(options, "Consul client options can't be null");
+    Objects.requireNonNull(config, "Given cluster manager can't get initialized.");
     mapContext
-      .setConsulClientOptions(options)
+      .setConsulClientOptions(new ConsulClientOptions(config))
       .setNodeId(UUID.randomUUID().toString());
     this.checkId = mapContext.getNodeId();
+    this.preferConsistency = config.containsKey("preferConsistency") ? config.getBoolean("preferConsistency") : false;
   }
 
+  /**
+   * Creates consul cluster manager instance with default configurations:
+   * host -> localhost; port - 8500; preferConsistency - false
+   */
   public ConsulClusterManager() {
-    super(NODES_MAP_NAME, new ConsulMapContext());
-    mapContext
-      .setConsulClientOptions(new ConsulClientOptions())
-      .setNodeId(UUID.randomUUID().toString());
-    this.checkId = mapContext.getNodeId();
-  }
-
-  public ConsulClusterManager(final ConsulClientOptions options, final boolean preferConsistency) {
-    super(NODES_MAP_NAME, new ConsulMapContext());
-    Objects.requireNonNull(options, "Consul client options can't be null");
-    mapContext.setConsulClientOptions(options)
-      .setNodeId(UUID.randomUUID().toString());
-    this.checkId = mapContext.getNodeId();
-    this.preferConsistency = preferConsistency;
+    this(new JsonObject());
   }
 
   @Override

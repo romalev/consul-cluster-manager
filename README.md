@@ -70,10 +70,19 @@ compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.4-beta'
 
 ```
 // 1. Create an instance of ConsulClusterManager. ConsulClusterManager strictly relies on vertx-consul-client (https://vertx.io/docs/vertx-consul-client/java/) 
-// so ConsulClientOptions can be used to adjust consul client configuration (ConsulClient is internally used).  
-ConsulClusterManager consulClusterManager = new ConsulClusterManager(new ConsulClientOptions());
-// or
+JsonObject options = new JsonObject()
+ // host where consul agent is running, if not specified default host will be used which is "localhost"
+ .put("host", "localhost") 
+ // port on wich consul agent is listening, if not specified default port will be used which is "8500"
+ .put("port", consulAgentPort) 
+ // * false - enable internal caching of event bus subscribers - this will give us better latency but stale reads (stale subsribers) might appear.
+ // * true - disable interbal caching of event bus subscribers - this will guve us stronger consistency in terms of fetching event bus subscribers, 
+ // but this will result in having much more round trips to consul kv store where event bus subs are being kept.
+ .put("preferConsistency", true);   
+ConsulClusterManager consulClusterManager = new ConsulClusterManager(options);
+// or use defaults: 
 // ConsulClusterManager consulClusterManager = new ConsulClusterManager();
+
 // 2. Create VertxOptions instance and specify consul cluster manager.
 VertxOptions vertxOptions = new VertxOptions();
 vertxOptions.setClusterManager(consulClusterManager);

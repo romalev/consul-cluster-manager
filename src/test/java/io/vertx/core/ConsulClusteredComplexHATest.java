@@ -1,7 +1,7 @@
 package io.vertx.core;
 
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
@@ -23,12 +23,12 @@ public class ConsulClusteredComplexHATest extends ComplexHATest {
 
   @Override
   protected ClusterManager getClusterManager() {
-    return new ConsulClusterManager(getConsulClientOptions());
+    return new ConsulClusterManager(getConsulClusterManagerOptions());
   }
 
-  private ConsulClientOptions getConsulClientOptions() {
-    return new ConsulClientOptions()
-      .setPort(port)
-      .setHost("localhost");
+  private JsonObject getConsulClusterManagerOptions() {
+    return new JsonObject()
+      .put("host", "localhost")
+      .put("port", port);
   }
 }

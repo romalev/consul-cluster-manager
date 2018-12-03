@@ -1,7 +1,7 @@
 package io.vertx.core.eventbus;
 
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
-import io.vertx.ext.consul.ConsulClientOptions;
 import io.vertx.spi.cluster.consul.ConsulCluster;
 import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
@@ -27,9 +27,10 @@ public class ConsulCpClusteredEventBusTest extends ClusteredEventBusTest {
 
   @Override
   protected ClusterManager getClusterManager() {
-    ConsulClientOptions options = new ConsulClientOptions()
-      .setPort(port)
-      .setHost("localhost");
-    return new ConsulClusterManager(options, true);
+    JsonObject options = new JsonObject()
+      .put("port", port)
+      .put("host", "localhost")
+      .put("preferConsistency", true);
+    return new ConsulClusterManager(options);
   }
 }

@@ -1,5 +1,6 @@
 package io.vertx.core.shareddata;
 
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.spi.cluster.ClusterManager;
 import io.vertx.ext.consul.ConsulClient;
 import io.vertx.ext.consul.ConsulClientOptions;
@@ -27,14 +28,14 @@ public class ConsulClusteredAsyncMapTest extends ClusteredAsyncMapTest {
 
   @Override
   protected ClusterManager getClusterManager() {
-    return new ConsulClusterManager(getConsulClientOptions());
+    return new ConsulClusterManager(getConsulClusterManagerOptions());
   }
 
   @Override
   public void before() throws Exception {
     super.before();
     if (consulClient == null) {
-      consulClient = ConsulClient.create(vertx, getConsulClientOptions());
+      consulClient = ConsulClient.create(vertx, new ConsulClientOptions(getConsulClusterManagerOptions()));
     }
   }
 
@@ -47,9 +48,9 @@ public class ConsulClusteredAsyncMapTest extends ClusteredAsyncMapTest {
     super.after();
   }
 
-  private ConsulClientOptions getConsulClientOptions() {
-    return new ConsulClientOptions()
-      .setPort(port)
-      .setHost("localhost");
+  private JsonObject getConsulClusterManagerOptions() {
+    return new JsonObject()
+      .put("host", "localhost")
+      .put("port", port);
   }
 }
