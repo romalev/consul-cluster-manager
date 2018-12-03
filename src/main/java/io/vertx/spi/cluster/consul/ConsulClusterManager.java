@@ -64,7 +64,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * Only one node joins the cluster at particular point in time. This is achieved through acquiring a lock.
    * Given lock is held until the node (that got registered itself) receives an appropriate "NODE JOINED" event through consul watch
    * about itself -> lock gets release then. Having this allow us to ensure :
-   * - nodeAdded and nodeRemoved are called on the nodeListener in the same order on the same nodes.
+   * - nodeAdded and nodeRemoved are called on the nodeListener in the same order on the same nodes with same node ids.
    * - getNodes() always return same node list when nodeAdded and nodeRemoved are called on the nodeListener.
    * Without locking we'd screw up an entire HA.
    *
