@@ -15,7 +15,7 @@ import static io.vertx.core.Future.succeededFuture;
  * It is ONLY used by {@link io.vertx.core.impl.HAManager} - essentially it holds HA INFO about cluster node's vertices.
  * Sync map's entries mode is PERSISTENT (not EPHEMERAL) in order for HA to work correctly.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
 

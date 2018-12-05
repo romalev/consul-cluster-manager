@@ -24,7 +24,7 @@ import io.vertx.ext.consul.KeyValueOptions;
  * <p>
  * Note: given implementation doesn't require to serialize/deserialize lock related data, instead it just manipulates plain strings.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulLock extends ConsulMap<String, String> implements Lock {
 

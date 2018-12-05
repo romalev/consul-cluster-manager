@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /**
  * Consul map mapContext.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 // TODO: to be renamed!
 public final class ConsulMapContext implements AutoCloseable {
@@ -76,7 +76,7 @@ public final class ConsulMapContext implements AutoCloseable {
     return Objects.requireNonNull(ephemeralSessionId);
   }
 
-  public Watch<KeyValueList> createAndGetWatch(String name) {
+  Watch<KeyValueList> createAndGetWatch(String name) {
     Objects.requireNonNull(name);
     Objects.requireNonNull(vertx);
     Objects.requireNonNull(consulClientOptions);

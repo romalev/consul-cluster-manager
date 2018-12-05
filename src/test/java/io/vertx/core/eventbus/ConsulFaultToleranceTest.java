@@ -1,7 +1,7 @@
 //package io.vertx.core.eventbus;
 //
+//import io.vertx.core.json.JsonObject;
 //import io.vertx.core.spi.cluster.ClusterManager;
-//import io.vertx.ext.consul.ConsulClientOptions;
 //import io.vertx.spi.cluster.consul.ConsulCluster;
 //import io.vertx.spi.cluster.consul.ConsulClusterManager;
 //import org.junit.AfterClass;
@@ -12,7 +12,7 @@
 // */
 //public class ConsulFaultToleranceTest extends FaultToleranceTest {
 //
-//  private static int port;
+//  private static int port = 8500;
 //
 //  @BeforeClass
 //  public static void startConsulCluster() {
@@ -24,11 +24,12 @@
 //    ConsulCluster.shutDown();
 //  }
 //
+//
 //  @Override
 //  protected ClusterManager getClusterManager() {
-//    ConsulClientOptions options = new ConsulClientOptions()
-//      .setPort(port)
-//      .setHost("localhost");
+//    JsonObject options = new JsonObject()
+//      .put("port", port)
+//      .put("host", "localhost");
 //    return new ConsulClusterManager(options);
 //  }
 //

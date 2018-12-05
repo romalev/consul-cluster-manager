@@ -10,6 +10,8 @@ import java.util.Set;
 
 /**
  * A bit changed version of origin which was written by <a href="http://tfox.org">Tim Fox</a>
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ChoosableSet<T> implements ChoosableIterable<T>, Serializable {
 

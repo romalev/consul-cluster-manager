@@ -36,7 +36,7 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
  * <p>
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulClusterManager extends ConsulMap<String, String> implements ClusterManager {
 

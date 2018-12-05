@@ -46,7 +46,7 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.*;
  * <p>
  * Note : https://github.com/vert-x3/vertx-consul-client/issues/54
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V> {
 
@@ -352,6 +352,6 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   @Override
   public String toString() {
-    return Json.encodePrettily(cache);
+    return Json.encode(cache);
   }
 }

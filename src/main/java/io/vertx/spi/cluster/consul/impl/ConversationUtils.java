@@ -20,7 +20,7 @@ import java.util.Optional;
  * <p>
  * Note: consider KRYO: [https://github.com/EsotericSoftware/kryo] to replace default java serialization here.
  *
- * @author Roman Levytskyi.
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  * @See {@link ConsulEntry}
  */
 class ConversationUtils {

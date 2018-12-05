@@ -12,7 +12,7 @@ import java.util.Optional;
  *
  * @param <K> actual type of key.
  * @param <V> actual type of value.
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  * @See {@link ConversationUtils}
  */
 final class ConsulEntry<K, V> implements Serializable {

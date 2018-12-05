@@ -22,10 +22,10 @@ import static io.vertx.spi.cluster.consul.impl.ConversationUtils.asTtlConsulEntr
 /**
  * Distributed async map implementation based on consul key-value store.
  * <p>
- * Note: given map is used in vertx shared data - it is used by vertx nodes to share the data,
+ * Note: given map is used by vertx nodes to share the data,
  * entries of this map are always PERSISTENT and NOT EPHEMERAL.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K, V> {
 
@@ -236,7 +236,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
    * <p>
    * For these reasons custom TTL monitoring mechanism was developed.
    *
-   * @author Roman Levytskyi.
+   * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
    */
   private static class TTLMonitor {
     private final static Logger log = LoggerFactory.getLogger(TTLMonitor.class);
