@@ -35,6 +35,7 @@ import org.junit.runners.Suite;
   // SHARED DATA
   ConsulAsyncApMultiMapTest.class,
   ConsulAsyncCpMultiMapTest.class,
+  ConsulClusteredAsyncMultiMapTest.class,
   ConsulClusteredAsyncMapTest.class,
   ConsulClusteredAsynchronousLockTest.class,
   ConsulClusteredSharedCounterTest.class,

@@ -34,6 +34,10 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * <p>
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
+ * - Compatible with vert.x 3.6.0+ release due to:
+ * -- https://github.com/vert-x3/vertx-consul-client/issues/54
+ * -- https://github.com/vert-x3/vertx-consul-client/issues/56
+ * -- {@link io.vertx.core.impl.HAManager} enhancements -> sync map operations are always executed on the thread from the worker pool.
  * <p>
  *
  * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>

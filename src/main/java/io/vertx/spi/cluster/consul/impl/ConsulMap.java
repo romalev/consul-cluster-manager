@@ -373,7 +373,10 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   protected String keyPath(Object k) {
     // we can't simply ship sequence of bytes to consul.
     if (k instanceof Buffer) {
-      return name + "/" + Base64.getEncoder().encodeToString(((Buffer) k).getBytes());
+      // buffer base 64 encoded value might include double slashes which can't be accepted  by consul as a valid key.
+      // see https://github.com/hashicorp/consul/issues/3476
+      // for these reasons we remove all slashes out of the key ONLY if key is instance of {@link Buffer}.
+      return name + "/" + (Base64.getEncoder().encodeToString(((Buffer) k).getBytes())).replaceAll("/", "");
     }
     return name + "/" + k.toString();
   }

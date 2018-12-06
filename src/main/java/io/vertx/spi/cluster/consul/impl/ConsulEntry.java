@@ -5,10 +5,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Represents simple entry of any of the cluster maps located within consul kv store.
+ * Represents a simple entry of any of the cluster maps located within consul kv store.
  * <p>
- * Key of any of the cluster maps can ONLY AND ONLY be represented as a simple string. In order to support different type of keys (ie. integers, doubles, etc)
- * we serialize consul entry's value as the key + value. We build cluster map out of consul kv store map by deserializing a value which essentially is an entry of key and value.
+ * Key and value of any of the cluster maps can ONLY AND ONLY be represented as simple strings. In order to support different type of keys or/and values (ie. integers, doubles, etc)
+ * we serialize the key + value and the result gets shipped to consul as a value. We build cluster map out of consul kv store map by deserializing a value which essentially is an key and value.
  *
  * @param <K> actual type of key.
  * @param <V> actual type of value.

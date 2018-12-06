@@ -11,7 +11,7 @@ import java.util.Set;
 import static io.vertx.core.Future.succeededFuture;
 
 /**
- * Distributed sync map implementation based on consul key-value store.
+ * Distributed sync map implementation backed by consul key-value store.
  * It is ONLY used by {@link io.vertx.core.impl.HAManager} - essentially it holds HA INFO about cluster node's vertices.
  * Sync map's entries mode is PERSISTENT (not EPHEMERAL) in order for HA to work correctly.
  *
