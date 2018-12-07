@@ -11,12 +11,11 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Consul map mapContext.
+ * Consul cluster manager context.
  *
  * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
-// TODO: to be renamed!
-public final class ConsulMapContext implements AutoCloseable {
+public final class ClusterManagerInternalContext implements AutoCloseable {
 
   private String nodeId;
   private Vertx vertx;
@@ -26,32 +25,32 @@ public final class ConsulMapContext implements AutoCloseable {
   // TODO: do we really need ConcurrentLinkedQueue?
   private Queue<Watch<KeyValueList>> watchQueue = new ConcurrentLinkedQueue<>();
 
-  public ConsulMapContext setVertx(Vertx vertx) {
-    checkIfInstanceInitialized(this.vertx, "vert.x");
+  public ClusterManagerInternalContext setVertx(Vertx vertx) {
+    checkIfInitialized(this.vertx, "vert.x");
     this.vertx = Objects.requireNonNull(vertx);
     return this;
   }
 
-  public ConsulMapContext initConsulClient() {
-    checkIfInstanceInitialized(consulClient, "consulClient");
+  public ClusterManagerInternalContext initConsulClient() {
+    checkIfInitialized(consulClient, "consulClient");
     this.consulClient = ConsulClient.create(Objects.requireNonNull(vertx), Objects.requireNonNull(consulClientOptions));
     return this;
   }
 
-  public ConsulMapContext setNodeId(String nodeId) {
-    checkIfInstanceInitialized(this.nodeId, "nodeId");
+  public ClusterManagerInternalContext setNodeId(String nodeId) {
+    checkIfInitialized(this.nodeId, "nodeId");
     this.nodeId = Objects.requireNonNull(nodeId);
     return this;
   }
 
-  public ConsulMapContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
-    checkIfInstanceInitialized(this.consulClientOptions, "consulClientOptions");
+  public ClusterManagerInternalContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
+    checkIfInitialized(this.consulClientOptions, "consulClientOptions");
     this.consulClientOptions = Objects.requireNonNull(consulClientOptions);
     return this;
   }
 
-  public ConsulMapContext setEphemeralSessionId(String sessionId) {
-    checkIfInstanceInitialized(this.ephemeralSessionId, "vert.x");
+  public ClusterManagerInternalContext setEphemeralSessionId(String sessionId) {
+    checkIfInitialized(this.ephemeralSessionId, "vert.x");
     this.ephemeralSessionId = Objects.requireNonNull(sessionId);
     return this;
   }
@@ -90,7 +89,7 @@ public final class ConsulMapContext implements AutoCloseable {
     watchQueue.forEach(Watch::stop);
   }
 
-  private <T> void checkIfInstanceInitialized(T instance, String instanceName) {
+  private <T> void checkIfInitialized(T instance, String instanceName) {
     if (instance != null) {
       throw new IllegalStateException(instanceName + " was already initialized!");
     }

@@ -27,8 +27,8 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
 
   private static final Logger log = LoggerFactory.getLogger(ConsulMap.class);
 
-  protected ConsulMap(String name, ConsulMapContext mapContext) {
-    super(name, mapContext);
+  protected ConsulMap(String name, ClusterManagerInternalContext appContext) {
+    super(name, appContext);
   }
 
   /**
@@ -53,7 +53,7 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions) {
     return assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> asFutureString(k, v, mapContext.getNodeId()))
+      .compose(aVoid -> asFutureString(k, v, appContext.getNodeId()))
       .compose(value -> putPlainValue(keyPath(k), value, keyValueOptions));
   }
 
@@ -67,17 +67,19 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   protected Future<Boolean> putPlainValue(String key, String value, KeyValueOptions keyValueOptions) {
     Future<Boolean> future = Future.future();
-    mapContext.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
+    appContext.getConsulClient().putValueWithOptions(key, value, keyValueOptions, resultHandler -> {
       if (resultHandler.succeeded()) {
-        String traceMessage = "[" + mapContext.getNodeId() + "] " + key + " put is " + resultHandler.result();
-        if (keyValueOptions != null) {
-          log.trace(traceMessage + " with : " + keyValueOptions.getAcquireSession());
-        } else {
-          log.trace(traceMessage);
+        if (log.isTraceEnabled()) {
+          String traceMessage = "[" + appContext.getNodeId() + "] " + key + " put is " + resultHandler.result();
+          if (keyValueOptions != null) {
+            log.trace(traceMessage + " with : " + keyValueOptions.getAcquireSession());
+          } else {
+            log.trace(traceMessage);
+          }
         }
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to put " + key + " -> " + value, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -105,13 +107,15 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   Future<KeyValue> getPlainValue(String consulKey) {
     Future<KeyValue> future = Future.future();
-    mapContext.getConsulClient().getValue(consulKey, resultHandler -> {
+    appContext.getConsulClient().getValue(consulKey, resultHandler -> {
       if (resultHandler.succeeded()) {
         // note: resultHandler.result().getValue() is null if nothing was found.
-        // log.trace("[" + nodeId + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "]" + " - Entry is found : " + resultHandler.result().getValue() + " by key: " + consulKey);
+        }
         future.complete(resultHandler.result());
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to look up an entry by: " + consulKey, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -157,12 +161,14 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   protected Future<Boolean> deleteValueByKeyPath(String keyPath) {
     Future<Boolean> result = Future.future();
-    mapContext.getConsulClient().deleteValue(keyPath, resultHandler -> {
+    appContext.getConsulClient().deleteValue(keyPath, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + mapContext.getNodeId() + "] " + keyPath + " -> " + " remove is true.");
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "] " + keyPath + " -> " + " remove is true.");
+        }
         result.complete(true);
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to remove an entry by keyPath: " + keyPath, result.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to remove an entry by keyPath: " + keyPath, result.cause());
         result.fail(resultHandler.cause());
       }
     });
@@ -174,10 +180,14 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   Future<Void> deleteAll() {
     Future<Void> future = Future.future();
-    mapContext.getConsulClient().deleteValues(name, result -> {
-      if (result.succeeded()) future.complete();
-      else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to clear an entire: " + name);
+    appContext.getConsulClient().deleteValues(name, result -> {
+      if (result.succeeded()) {
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "] - has removed all of: " + name);
+        }
+        future.complete();
+      } else {
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to clear an entire: " + name);
         future.fail(result.cause());
       }
     });
@@ -189,12 +199,14 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   protected Future<List<String>> plainKeys() {
     Future<List<String>> futureKeys = Future.future();
-    mapContext.getConsulClient().getKeys(name, resultHandler -> {
+    appContext.getConsulClient().getKeys(name, resultHandler -> {
       if (resultHandler.succeeded()) {
-        // log.trace("[" + nodeId + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "]" + " - Found following keys of: " + name + " -> " + resultHandler.result());
+        }
         futureKeys.complete(resultHandler.result());
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to fetch keys of: " + name, resultHandler.cause());
         futureKeys.fail(resultHandler.cause());
       }
     });
@@ -206,10 +218,10 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   Future<List<KeyValue>> plainEntries() {
     Future<List<KeyValue>> keyValueListFuture = Future.future();
-    mapContext.getConsulClient().getValues(name, resultHandler -> {
+    appContext.getConsulClient().getValues(name, resultHandler -> {
       if (resultHandler.succeeded()) keyValueListFuture.complete(nullSafeListResult(resultHandler.result()));
       else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to fetch entries of: " + name, resultHandler.cause());
         keyValueListFuture.fail(resultHandler.cause());
       }
     });
@@ -231,12 +243,14 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
       .setName(sessionName)
       .setChecks(Arrays.asList(checkId, "serfHealth"));
 
-    mapContext.getConsulClient().createSessionWithOptions(sessionOptions, session -> {
+    appContext.getConsulClient().createSessionWithOptions(sessionOptions, session -> {
       if (session.succeeded()) {
-        log.trace("[" + mapContext.getNodeId() + "]" + " - " + sessionName + ": " + session.result() + " has been registered.");
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "]" + " - " + sessionName + ": " + session.result() + " has been registered.");
+        }
         future.complete(session.result());
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register the session.", session.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to register the session.", session.cause());
         future.fail(session.cause());
       }
     });
@@ -248,12 +262,14 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
    */
   protected Future<Void> destroySession(String sessionId) {
     Future<Void> future = Future.future();
-    mapContext.getConsulClient().destroySession(sessionId, resultHandler -> {
+    appContext.getConsulClient().destroySession(sessionId, resultHandler -> {
       if (resultHandler.succeeded()) {
-        log.trace("[" + mapContext.getNodeId() + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "]" + " - Session: " + sessionId + " has been successfully destroyed.");
+        }
         future.complete();
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to destroy session: " + sessionId, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -277,12 +293,12 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
   @Deprecated
   protected Future<String> getTtlSessionId(long ttl, K k) {
     if (ttl < 10000) {
-      log.warn("[" + mapContext.getNodeId() + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");
+      log.warn("[" + appContext.getNodeId() + "]" + " - Specified ttl is less than allowed in consul -> min ttl is 10s.");
       ttl = 10000;
     }
 
     if (ttl > 86400000) {
-      log.warn("[" + mapContext.getNodeId() + "]" + " - Specified ttl is more that allowed in consul -> max ttl is 86400s.");
+      log.warn("[" + appContext.getNodeId() + "]" + " - Specified ttl is more that allowed in consul -> max ttl is 86400s.");
       ttl = 86400000;
     }
 
@@ -297,12 +313,14 @@ public abstract class ConsulMap<K, V> extends ConsulMapListener {
       .setLockDelay(0)
       .setName(sessionName);
 
-    mapContext.getConsulClient().createSessionWithOptions(sessionOpts, idHandler -> {
+    appContext.getConsulClient().createSessionWithOptions(sessionOpts, idHandler -> {
       if (idHandler.succeeded()) {
-        log.trace("[" + mapContext.getNodeId() + "]" + " - TTL session has been created with id: " + idHandler.result());
+        if (log.isTraceEnabled()) {
+          log.trace("[" + appContext.getNodeId() + "]" + " - TTL session has been created with id: " + idHandler.result());
+        }
         future.complete(idHandler.result());
       } else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to create ttl consul session", idHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to create ttl consul session", idHandler.cause());
         future.fail(idHandler.cause());
       }
     });

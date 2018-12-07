@@ -34,9 +34,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
   private static final Logger log = LoggerFactory.getLogger(ConsulAsyncMap.class);
   private final TTLMonitor ttlMonitor;
 
-  public ConsulAsyncMap(String name, ConsulMapContext context, ClusterManager clusterManager) {
-    super(name, context);
-    this.ttlMonitor = new TTLMonitor(mapContext.getVertx(), clusterManager, name, mapContext.getNodeId());
+  public ConsulAsyncMap(String name, ClusterManagerInternalContext appContext, ClusterManager clusterManager) {
+    super(name, appContext);
+    this.ttlMonitor = new TTLMonitor(appContext.getVertx(), clusterManager, name, appContext.getNodeId());
     startListening();
   }
 
@@ -183,7 +183,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
   @Override
   protected void entryUpdated(EntryEvent event) {
     if (event.getEventType() == EntryEvent.EventType.WRITE) {
-      log.debug("[" + mapContext.getNodeId() + "] : " + "applying a ttl monitor on entry: " + event.getEntry().getKey());
+      if (log.isDebugEnabled()) {
+        log.debug("[" + appContext.getNodeId() + "] : " + "applying a ttl monitor on entry: " + event.getEntry().getKey());
+      }
       ttlMonitor.apply(
         event.getEntry().getKey(),
         asTtlConsulEntry(event.getEntry().getValue()));
@@ -218,7 +220,7 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
    */
   private Future<Boolean> putValue(K k, V v, KeyValueOptions keyValueOptions, Optional<Long> ttl) {
     Long ttlValue = ttl.map(aLong -> ttl.get()).orElse(null);
-    return asFutureString(k, v, mapContext.getNodeId(), ttlValue)
+    return asFutureString(k, v, appContext.getNodeId(), ttlValue)
       .compose(value -> putPlainValue(keyPath(k), value, keyValueOptions))
       .compose(result ->
         ttlMonitor.apply(keyPath(k), ttl)
@@ -276,7 +278,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
       Future<Void> future = Future.future();
       cancelTimer(keyPath);
       if (ttl.isPresent()) {
-        log.debug("[" + nodeId + "] : " + "applying ttl monitoring on: " + keyPath + " with ttl: " + ttl.get());
+        if (log.isDebugEnabled()) {
+          log.debug("[" + nodeId + "] : " + "applying ttl monitoring on: " + keyPath + " with ttl: " + ttl.get());
+        }
         String lockName = "ttlLockOn/" + keyPath;
         clusterManager.getLockWithTimeout(lockName, 50, lockObtainedEvent -> {
           setTimer(keyPath, ttl.get(), lockName, lockObtainedEvent);
@@ -322,7 +326,9 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
       if (Objects.nonNull(timerId)) {
         vertx.cancelTimer(timerId);
         timerMap.remove(keyPath);
-        log.debug("[" + nodeId + "] : " + "cancelling ttl monitoring on entry: " + keyPath);
+        if (log.isDebugEnabled()) {
+          log.debug("[" + nodeId + "] : " + "cancelling ttl monitoring on entry: " + keyPath);
+        }
       }
     }
 

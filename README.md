@@ -1,7 +1,6 @@
 # Consul cluster manager for Vert.x ecosystem #
 
 [![Build Status](https://travis-ci.com/romalev/vertx-consul-cluster-manager.svg?branch=master)](https://travis-ci.com/romalev/vertx-consul-cluster-manager)
-[![codecov](https://codecov.io/gh/romalev/vertx-consul-cluster-manager/branch/master/graph/badge.svg)](https://codecov.io/gh/romalev/vertx-consul-cluster-manager)
 
 **Introduction**
 -
@@ -9,7 +8,7 @@ Consul - based cluster manager that is plugable into Vert.x ecosystem. **[Consul
 
 **Project status**
 -
-Project is still being under POC. Some TCK tests keep failing. Using it is under your own risk. Your feedback would be greatly appreciated.
+Project is still being under POC. Vert.x core TCK is passing. Your feedback would be greatly appreciated.
 
 **Motivation**
 - 
@@ -76,7 +75,7 @@ JsonObject options = new JsonObject()
  // port on wich consul agent is listening, if not specified default port will be used which is "8500"
  .put("port", consulAgentPort) 
  // * false - enable internal caching of event bus subscribers - this will give us better latency but stale reads (stale subsribers) might appear.
- // * true - disable interbal caching of event bus subscribers - this will guve us stronger consistency in terms of fetching event bus subscribers, 
+ // * true - disable internal caching of event bus subscribers - this will give us stronger consistency in terms of fetching event bus subscribers, 
  // but this will result in having much more round trips to consul kv store where event bus subs are being kept.
  .put("preferConsistency", true);   
 ConsulClusterManager consulClusterManager = new ConsulClusterManager(options);

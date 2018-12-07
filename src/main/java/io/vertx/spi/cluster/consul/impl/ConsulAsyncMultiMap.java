@@ -65,11 +65,11 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    */
   private ConcurrentMap<K, ChoosableSet<V>> cache;
 
-  public ConsulAsyncMultiMap(String name, boolean preferConsistency, ConsulMapContext context) {
-    super(name, context);
+  public ConsulAsyncMultiMap(String name, boolean preferConsistency, ClusterManagerInternalContext appContext) {
+    super(name, appContext);
     this.preferConsistency = preferConsistency;
     // options to make entries of this map ephemeral.
-    this.kvOpts = new KeyValueOptions().setAcquireSession(context.getEphemeralSessionId());
+    this.kvOpts = new KeyValueOptions().setAcquireSession(appContext.getEphemeralSessionId());
     if (!preferConsistency) { // if cp is disabled then disable caching.
       cache = new ConcurrentHashMap<>();
       startListening();
@@ -79,7 +79,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   @Override
   public void add(K k, V v, Handler<AsyncResult<Void>> completionHandler) {
     assertKeyAndValueAreNotNull(k, v)
-      .compose(aVoid -> getAllByKey(keyPathForAllByAddressAndByNodeId(k, mapContext.getNodeId())))
+      .compose(aVoid -> getAllByKey(keyPathForAllByAddressAndByNodeId(k, appContext.getNodeId())))
       .compose(vs -> doAdd(k, v, vs))
       .setHandler(completionHandler);
   }
@@ -154,7 +154,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
   private Future<Void> nonCacheableAdd(K k, Set<V> subs, V sub) {
     Set<V> newOne = new HashSet<>(subs);
     newOne.add(sub);
-    return addToConsulKv(k, newOne, mapContext.getNodeId())
+    return addToConsulKv(k, newOne, appContext.getNodeId())
       .compose(aBoolean -> aBoolean ? succeededFuture() : failedFuture(sub.toString() + ": wasn't added to: " + name));
   }
 
@@ -172,7 +172,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    */
   private Future<ChoosableSet<V>> doGet(K key) {
     Future<ChoosableSet<V>> out = Future.future();
-    VertxInternal vertxInternal = (VertxInternal) mapContext.getVertx();
+    VertxInternal vertxInternal = (VertxInternal) appContext.getVertx();
     vertxInternal.getOrCreateContext().<ChoosableSet<V>>executeBlocking(event -> {
       Future<ChoosableSet<V>> future = preferConsistency
         ? nonCacheableGet(key) : cacheableGet(key);
@@ -266,7 +266,7 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
    */
   private Future<Set<ConsulEntry<K, Set<V>>>> getAll(String consulKey) {
     Future<KeyValueList> future = Future.future();
-    mapContext.getConsulClient().getValues(consulKey, future.completer());
+    appContext.getConsulClient().getValues(consulKey, future.completer());
 
     return future.compose(keyValueList -> {
       List<KeyValue> keyValues = nullSafeListResult(keyValueList);
@@ -310,7 +310,9 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     if (choosableSet == null) choosableSet = new ChoosableSet<>(1);
     choosableSet.add(value);
     cache.put(key, choosableSet);
-    log.trace("[" + mapContext.getNodeId() + "]" + " Cache: " + name + " after put of " + key + " -> " + value + ": " + this.toString());
+    if (log.isTraceEnabled()) {
+      log.trace("[" + appContext.getNodeId() + "]" + " Cache: " + name + " after put of " + key + " -> " + value + ": " + Json.encode(cache));
+    }
   }
 
   private void removeEntryFromCache(K key, V value) {
@@ -319,7 +321,9 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
     choosableSet.remove(value);
     if (choosableSet.isEmpty()) cache.remove(key);
     else cache.put(key, choosableSet);
-    log.trace("[" + mapContext.getNodeId() + "]" + " Cache: " + name + " after remove of " + key + " -> " + value + ": " + this.toString());
+    if (log.isTraceEnabled()) {
+      log.trace("[" + appContext.getNodeId() + "]" + " Cache: " + name + " after remove of " + key + " -> " + value + ": " + Json.encode(cache));
+    }
   }
 
   private void addEntriesToCache(K key, ChoosableSet<V> values) {
@@ -328,12 +332,14 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   @Override
   protected synchronized void entryUpdated(EntryEvent event) {
-    log.trace("[" + mapContext.getNodeId() + "]" + " Entry: " + event.getEntry().getKey() + " is " + event.getEventType());
+    if (log.isTraceEnabled()) {
+      log.trace("[" + appContext.getNodeId() + "]" + " Entry: " + event.getEntry().getKey() + " is for " + event.getEventType());
+    }
     ConsulEntry<K, Set<V>> entry;
     try {
       entry = asConsulEntry(event.getEntry().getValue());
     } catch (Exception e) {
-      log.error("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
+      log.warn("Failed to decode: " + event.getEntry().getKey() + " -> " + event.getEntry().getValue(), e);
       return;
     }
     switch (event.getEventType()) {
@@ -346,10 +352,5 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
       default:
         break;
     }
-  }
-
-  @Override
-  public String toString() {
-    return Json.encode(cache);
   }
 }

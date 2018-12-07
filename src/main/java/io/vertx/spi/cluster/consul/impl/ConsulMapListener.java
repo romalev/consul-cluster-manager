@@ -16,11 +16,11 @@ import java.util.*;
 public abstract class ConsulMapListener {
 
   protected final String name;
-  protected final ConsulMapContext mapContext;
+  protected final ClusterManagerInternalContext appContext;
 
-  protected ConsulMapListener(String name, ConsulMapContext mapContext) {
+  ConsulMapListener(String name, ClusterManagerInternalContext appContext) {
     this.name = Objects.requireNonNull(name);
-    this.mapContext = Objects.requireNonNull(mapContext);
+    this.appContext = Objects.requireNonNull(appContext);
   }
 
   /**
@@ -31,7 +31,7 @@ public abstract class ConsulMapListener {
   protected abstract void entryUpdated(EntryEvent event);
 
   protected void startListening() {
-    mapContext.createAndGetWatch(name).setHandler(kvWatchHandler()).start();
+    appContext.createAndGetWatch(name).setHandler(kvWatchHandler()).start();
   }
 
   /**
