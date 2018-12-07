@@ -12,6 +12,11 @@ import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 
+/**
+ * Tests for {@link io.vertx.spi.cluster.consul.impl.ConsulAsyncMap}
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulClusteredAsyncMapTest extends ClusteredAsyncMapTest {
 
   private ConsulClient consulClient;

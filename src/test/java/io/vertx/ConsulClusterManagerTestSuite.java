@@ -25,7 +25,7 @@ import org.junit.runners.Suite;
  * Notes:
  * - FaultToleranceTest is not implemented.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({

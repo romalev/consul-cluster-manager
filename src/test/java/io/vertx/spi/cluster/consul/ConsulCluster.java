@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Mock of consul cluster consisting of only one consul agent.
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulCluster {
 

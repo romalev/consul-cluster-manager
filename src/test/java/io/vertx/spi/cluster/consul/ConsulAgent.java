@@ -5,6 +5,11 @@ import com.pszymczyk.consul.ConsulStarterBuilder;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
+/**
+ * Embedded consul agent.
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulAgent {
   private final Logger log = LoggerFactory.getLogger(ConsulAgent.class);
 

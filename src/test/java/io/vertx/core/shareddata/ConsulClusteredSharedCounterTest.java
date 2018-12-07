@@ -11,6 +11,11 @@ import org.junit.BeforeClass;
 
 import java.util.concurrent.CountDownLatch;
 
+/**
+ * Tests for {@link io.vertx.spi.cluster.consul.impl.ConsulCounter}
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulClusteredSharedCounterTest extends ClusteredSharedCounterTest {
 
   private ConsulClient consulClient;

@@ -8,6 +8,11 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+/**
+ * Tests for {@link io.vertx.spi.cluster.consul.impl.ConsulLock}
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulClusteredAsynchronousLockTest extends ClusteredAsynchronousLockTest {
 
   private static int port;

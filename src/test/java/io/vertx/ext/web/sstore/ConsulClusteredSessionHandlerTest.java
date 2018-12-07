@@ -14,6 +14,9 @@ import org.junit.Test;
 
 import java.util.function.Consumer;
 
+/**
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulClusteredSessionHandlerTest extends ClusteredSessionHandlerTest {
 
   private final static int DEFAULT_PORT = Utils.getFreePort();

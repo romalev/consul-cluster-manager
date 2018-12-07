@@ -16,6 +16,9 @@ import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 
+/**
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulClusteredAsyncMultiMapTest extends VertxTestBase {
 
   private ClusterManager[] clusterManagers;

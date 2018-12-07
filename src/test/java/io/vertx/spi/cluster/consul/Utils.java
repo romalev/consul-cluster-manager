@@ -5,6 +5,8 @@ import java.net.ServerSocket;
 
 /**
  * Test utils.
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class Utils {
 

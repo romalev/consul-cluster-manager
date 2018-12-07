@@ -7,6 +7,9 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
+/**
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulAsyncApMultiMapTest extends ConsulAsyncBaseMultiMapTest {
 
   private static int port = 8500;

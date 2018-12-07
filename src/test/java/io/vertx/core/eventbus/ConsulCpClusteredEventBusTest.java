@@ -10,6 +10,8 @@ import org.junit.BeforeClass;
 /**
  * Tests {@link io.vertx.core.eventbus.impl.clustered.ClusteredEventBus}
  * Caching is disabled in {@link io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap}
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulCpClusteredEventBusTest extends ClusteredEventBusTest {
 
