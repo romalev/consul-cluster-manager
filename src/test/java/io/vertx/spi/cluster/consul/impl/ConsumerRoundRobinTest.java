@@ -16,6 +16,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsumerRoundRobinTest extends VertxTestBase {
 
   private static final String MESSAGE_ADDRESS = "consumerAddress";

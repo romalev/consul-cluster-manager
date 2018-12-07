@@ -29,24 +29,22 @@ import static io.vertx.core.Future.succeededFuture;
 import static io.vertx.spi.cluster.consul.impl.ConversationUtils.*;
 
 /**
- * Distributed consul async multimap implementation. IMPORTANT: purpose of async multimap in vertx cluster management is to hold mapping between
- * event bus names and its actual subscribers (subscriber is simply an entry containing host and port). When a message is fired from producer through
- * event bus to particular address (which is simple string), first - address gets resolved by cluster manager by looking up a key which is event bus address and then
- * getting one or set of actual IP addresses (key's values) where a message is going to getEntries routed to.
+ * Distributed async multimap implementation backed by consul kv store. IMPORTANT: the purpose of async multimap in vertx cluster management is to hold mapping between
+ * event bus names (addresses) and their actual subscribers (subscriber is simply an entry containing host and port). When a message is fired from producer through
+ * event bus to particular address (which is simple string), first - address gets resolved by cluster manager by looking up entry (entries) where key is event bus address and value
+ * is one or set of corresponding IP addresses -> where a message is going to be routed to.
  * <p>
  * <b>Implementation details:</b>
  * <p>
- * - Consul itself doesn't provide out-of-the box the multimap implementation - this is (to be) addressed locally.
+ * - Consul itself doesn't provide the multimap implementation out-of-the box - this is (to be) addressed locally.
  * Entries of vertx event-bus subscribers MUST BE EPHEMERAL (AsyncMultiMap holds the subscribers) so node id is appended to each key of this map.
  * Example :
  * __vertx.subs/{address1}/{nodeId} -> Set<V>
  * __vertx.subs/{address1}/{nodeId} -> Set<V>
  * __vertx.subs/{address2}/{nodeId} -> Set<V>
  * __vertx.subs/{address3}/{nodeId} -> Set<V>
- * <p>
- * Note : https://github.com/vert-x3/vertx-consul-client/issues/54
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncMultiMap<K, V> {
 
@@ -352,6 +350,6 @@ public class ConsulAsyncMultiMap<K, V> extends ConsulMap<K, V> implements AsyncM
 
   @Override
   public String toString() {
-    return Json.encodePrettily(cache);
+    return Json.encode(cache);
   }
 }

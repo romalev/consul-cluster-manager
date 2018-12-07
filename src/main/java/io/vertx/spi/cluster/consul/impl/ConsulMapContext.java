@@ -13,8 +13,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /**
  * Consul map mapContext.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
+// TODO: to be renamed!
 public final class ConsulMapContext implements AutoCloseable {
 
   private String nodeId;
@@ -26,26 +27,31 @@ public final class ConsulMapContext implements AutoCloseable {
   private Queue<Watch<KeyValueList>> watchQueue = new ConcurrentLinkedQueue<>();
 
   public ConsulMapContext setVertx(Vertx vertx) {
+    checkIfInstanceInitialized(this.vertx, "vert.x");
     this.vertx = Objects.requireNonNull(vertx);
     return this;
   }
 
   public ConsulMapContext initConsulClient() {
+    checkIfInstanceInitialized(consulClient, "consulClient");
     this.consulClient = ConsulClient.create(Objects.requireNonNull(vertx), Objects.requireNonNull(consulClientOptions));
     return this;
   }
 
   public ConsulMapContext setNodeId(String nodeId) {
+    checkIfInstanceInitialized(this.nodeId, "nodeId");
     this.nodeId = Objects.requireNonNull(nodeId);
     return this;
   }
 
   public ConsulMapContext setConsulClientOptions(ConsulClientOptions consulClientOptions) {
+    checkIfInstanceInitialized(this.consulClientOptions, "consulClientOptions");
     this.consulClientOptions = Objects.requireNonNull(consulClientOptions);
     return this;
   }
 
   public ConsulMapContext setEphemeralSessionId(String sessionId) {
+    checkIfInstanceInitialized(this.ephemeralSessionId, "vert.x");
     this.ephemeralSessionId = Objects.requireNonNull(sessionId);
     return this;
   }
@@ -70,7 +76,7 @@ public final class ConsulMapContext implements AutoCloseable {
     return Objects.requireNonNull(ephemeralSessionId);
   }
 
-  public Watch<KeyValueList> createAndGetWatch(String name) {
+  Watch<KeyValueList> createAndGetWatch(String name) {
     Objects.requireNonNull(name);
     Objects.requireNonNull(vertx);
     Objects.requireNonNull(consulClientOptions);
@@ -81,11 +87,12 @@ public final class ConsulMapContext implements AutoCloseable {
 
   @Override
   public void close() {
-    try {
-      consulClient.close();
-    } catch (IllegalStateException e) {
-
-    }
     watchQueue.forEach(Watch::stop);
+  }
+
+  private <T> void checkIfInstanceInitialized(T instance, String instanceName) {
+    if (instance != null) {
+      throw new IllegalStateException(instanceName + " was already initialized!");
+    }
   }
 }

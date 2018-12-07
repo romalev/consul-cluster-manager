@@ -98,5 +98,5 @@ Vertx.clusteredVertx(vertxOptions, res -> {
 
 **Restrictions**
 -
-- Compatible with vert.x 3.6.0 release.
-- The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to any client that attempts to store more than that limit in a value.
+- Compatible with **ONLY Vert.x 3.6.+** release.
+- The limit on a key's value size of any of the consul  maps is 512KB.

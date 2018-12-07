@@ -11,7 +11,7 @@ import java.util.*;
 /**
  * Consul KV store listener encapsulates mechanism of receiving {@link io.vertx.ext.consul.KeyValueList} and transforming it to internal {@link EntryEvent}.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public abstract class ConsulMapListener {
 

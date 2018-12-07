@@ -5,26 +5,28 @@ import com.pszymczyk.consul.ConsulStarterBuilder;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
-import java.io.IOException;
-import java.net.ServerSocket;
-
+/**
+ * Embedded consul agent.
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulAgent {
   private final Logger log = LoggerFactory.getLogger(ConsulAgent.class);
 
   private int port;
   private ConsulProcess consul;
 
-  public ConsulAgent() {
-    this.port = getFreePort();
+  ConsulAgent() {
+    this.port = Utils.getFreePort();
   }
 
-  public int start() {
+  int start() {
     consul = ConsulStarterBuilder.consulStarter().withHttpPort(port).build().start();
     log.info("Consul test agent is up and running on port: " + port);
     return port;
   }
 
-  public void stop() {
+  void stop() {
     consul.close();
     log.info("Consul test agent has been stopped.");
   }
@@ -33,15 +35,5 @@ public class ConsulAgent {
     return port;
   }
 
-  private int getFreePort() {
-    int port = -1;
-    try {
-      ServerSocket socket = new ServerSocket(0);
-      port = socket.getLocalPort();
-      socket.close();
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
-    return port;
-  }
+
 }

@@ -11,12 +11,12 @@ sourceCompatibility = 1.8
 repositories {
   mavenCentral()
   maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+  maven { url 'https://jitpack.io' }
 }
 
 ext {
   junitVersion = "4.12"
-  vertxVersion = "3.5.4"
-  vertxSnaphotVersion = "3.6.0"
+  vertxVersion = "3.6.0"
   logbackVersion = "1.2.3"
 }
 
@@ -37,16 +37,15 @@ check.dependsOn jacocoTestReport
 dependencies {
   testCompile group: 'junit', name: 'junit', version: junitVersion
   testCompile group: 'com.pszymczyk.consul', name: 'embedded-consul', version: "1.1.1"
-  testCompile group: 'io.vertx', name: 'vertx-unit', version: vertxSnaphotVersion
+  testCompile group: 'io.vertx', name: 'vertx-unit', version: vertxVersion
 
   testCompile group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
-  testCompile group: 'io.vertx', name: 'vertx-web', version: vertxSnaphotVersion
-  testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'tests', version: vertxSnaphotVersion
-  testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'test-sources', version: vertxSnaphotVersion
-  testCompile group: 'io.vertx', name: 'vertx-web', classifier: 'tests', version: vertxSnaphotVersion
-  testCompile group: 'io.vertx', name: 'vertx-web', classifier: 'test-sources', version: vertxSnaphotVersion
+  testCompile group: 'io.vertx', name: 'vertx-web', version: vertxVersion
+  testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'tests', version: vertxVersion
+  testCompile group: 'io.vertx', name: 'vertx-core', classifier: 'test-sources', version: vertxVersion
+  testCompile group: 'io.vertx', name: 'vertx-web', classifier: 'tests', version: vertxVersion
+  testCompile group: 'io.vertx', name: 'vertx-web', classifier: 'test-sources', version: vertxVersion
 
-  compile group: 'io.vertx', name: 'vertx-core', version: vertxSnaphotVersion
-  compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxSnaphotVersion
-
+  compile group: 'io.vertx', name: 'vertx-core', version: vertxVersion
+  compile group: 'io.vertx', name: 'vertx-consul-client', version: vertxVersion
 }

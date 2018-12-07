@@ -16,8 +16,16 @@ import org.junit.runners.Suite;
  * <p>
  * To enable slf4 logging specify this as VM options:
  * -ea -Dvertx.logger-delegate-factory-class-name=io.vertx.core.logging.SLF4JLogDelegateFactory
+ * <p>
+ * To run a particular test:
+ * ./gradlew test --info --tests io.vertx.core.ConsulClusteredComplexHATest
+ * To run all tests:
+ * ./gradlew test --info
+ * <p>
+ * Notes:
+ * - FaultToleranceTest is not implemented.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
@@ -25,8 +33,9 @@ import org.junit.runners.Suite;
   ConsulClusteredHATest.class,
   ConsulClusteredComplexHATest.class,
   // SHARED DATA
-  ConsulAsyncApBaseMultiMapTest.class,
-  ConsulAsyncCpBaseMultiMapTest.class,
+  ConsulAsyncApMultiMapTest.class,
+  ConsulAsyncCpMultiMapTest.class,
+  ConsulClusteredAsyncMultiMapTest.class,
   ConsulClusteredAsyncMapTest.class,
   ConsulClusteredAsynchronousLockTest.class,
   ConsulClusteredSharedCounterTest.class,
@@ -38,8 +47,6 @@ import org.junit.runners.Suite;
   ConsulCpClusteredEventBusTest.class,
   ConsulApClusteredEventBusTest.class,
   ConsulClusteredSessionHandlerTest.class
-  // TODO: get tests below done!
-  // ConsulFaultToleranceTest.class,
 })
 public class ConsulClusterManagerTestSuite {
 }

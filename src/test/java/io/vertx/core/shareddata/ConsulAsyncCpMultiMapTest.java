@@ -7,9 +7,12 @@ import io.vertx.spi.cluster.consul.ConsulClusterManager;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
-public class ConsulAsyncApBaseMultiMapTest extends ConsulAsyncBaseMultiMapTest {
+/**
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
+public class ConsulAsyncCpMultiMapTest extends ConsulAsyncBaseMultiMapTest {
 
-  private static int port = 8500;
+  private static int port;
 
   @BeforeClass
   public static void startConsulCluster() {
@@ -26,7 +29,7 @@ public class ConsulAsyncApBaseMultiMapTest extends ConsulAsyncBaseMultiMapTest {
     JsonObject options = new JsonObject()
       .put("port", port)
       .put("host", "localhost")
-      .put("preferConsistency", false);
+      .put("preferConsistency", true);
     return new ConsulClusterManager(options);
   }
 }

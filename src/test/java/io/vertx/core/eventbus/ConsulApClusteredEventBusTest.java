@@ -21,6 +21,8 @@ import static org.hamcrest.CoreMatchers.instanceOf;
  * Caching is enabled in {@link io.vertx.spi.cluster.consul.impl.ConsulAsyncMultiMap}
  * <p>
  * Some tests contain explicit delay - this allows local caches to catch up with central consul kv store.
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulApClusteredEventBusTest extends ClusteredEventBusTest {
 

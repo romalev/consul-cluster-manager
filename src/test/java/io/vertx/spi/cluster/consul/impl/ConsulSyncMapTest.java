@@ -16,7 +16,7 @@ import static org.junit.Assert.*;
 /**
  * Test for {@link ConsulSyncMap}
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulSyncMapTest {
 

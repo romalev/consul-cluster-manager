@@ -1,20 +1,33 @@
 package io.vertx.spi.cluster.consul;
 
+import io.vertx.core.VertxException;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Mock of consul cluster consisting of only one consul agent.
+ *
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulCluster {
 
   private static ConsulAgent consulAgent;
+  private static final AtomicBoolean started = new AtomicBoolean();
 
   public static int init() {
-    consulAgent = new ConsulAgent();
-    int port = consulAgent.start();
-    Runtime.getRuntime().addShutdownHook(new Thread(consulAgent::stop));
-    return port;
+    if (started.compareAndSet(false, true)) {
+      consulAgent = new ConsulAgent();
+      return consulAgent.start();
+    } else {
+      throw new VertxException("Cluster has been already started!");
+    }
   }
 
   public static void shutDown() {
-    consulAgent.stop();
+    if (started.compareAndSet(true, false)) {
+      consulAgent.stop();
+    } else {
+      throw new VertxException("Cluster has been already stopped!");
+    }
   }
 }

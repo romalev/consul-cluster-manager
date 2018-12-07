@@ -14,9 +14,9 @@ import io.vertx.ext.consul.KeyValueOptions;
  * <b> Given implementation is based on using consul sessions - see https://www.consul.io/docs/guides/leader-election.html.</b>
  * Some notes:
  * <p>
- * The state of our lock would then correspond to the existence or non-existence of the respective key in the key-value store.
+ * The state of our lock literally corresponds to the existence or non-existence of the respective key in the key-value store.
  * In order to obtain the lock we create a simple kv pair in Consul kv store and bound it with ttl session's id.
- * In order to release the lock we remove respective entry (we don't destroy respective ttl session which triggers automatically the deleting of kv pair that was bound to it).
+ * In order to release the lock we destroy respective session which triggers automatically the deleting of kv pair that was bound to it.
  * <p>
  * Some additional details:
  * https://github.com/hashicorp/consul/issues/432
@@ -24,7 +24,7 @@ import io.vertx.ext.consul.KeyValueOptions;
  * <p>
  * Note: given implementation doesn't require to serialize/deserialize lock related data, instead it just manipulates plain strings.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulLock extends ConsulMap<String, String> implements Lock {
 
@@ -75,7 +75,7 @@ public class ConsulLock extends ConsulMap<String, String> implements Lock {
 
   /**
    * Obtains a session id from consul. IMPORTANT : lock MUST be bound to tcp check since failed (failing) node must give up any locks being held by it,
-   * therefore obtained session id is being already bounded to tcp check.
+   * therefore obtained session id is being bounded to tcp check.
    *
    * @param checkId - tcp check id.
    * @return consul session id.

@@ -14,6 +14,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
+ */
 public class ConsulAsyncBaseMultiMapTest extends AsyncMultiMapTest {
 
   protected volatile AsyncMultiMap<String, ClusterNodeInfo> clusterNodeIdMap;

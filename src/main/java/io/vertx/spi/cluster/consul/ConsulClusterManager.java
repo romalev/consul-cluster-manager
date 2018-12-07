@@ -34,9 +34,13 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * <p>
  * - The limit on a key's value size of any of the consul maps is 512KB. This is strictly enforced and an HTTP 413 status will be returned to
  * any client that attempts to store more than that limit in a value. It should be noted that the Consul key/value store is not designed to be used as a general purpose database.
+ * - Compatible with vert.x 3.6.0+ release due to:
+ * -- https://github.com/vert-x3/vertx-consul-client/issues/54
+ * -- https://github.com/vert-x3/vertx-consul-client/issues/56
+ * -- {@link io.vertx.core.impl.HAManager} enhancements -> sync map operations are always executed on the thread from the worker pool.
  * <p>
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulClusterManager extends ConsulMap<String, String> implements ClusterManager {
 
@@ -55,7 +59,6 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   /*
    * A set that attempts to keep all cluster node's data locally cached. Cluster manager
    * watches the consul "__vertx.nodes" path, responds to update/create/delete events, pull down the data.
-   * IMPORTANT: it's not possible to stay transactionally in sync. You must be prepared for false-positives and false-negatives.
    */
   private final Set<String> nodes = new HashSet<>();
   /*

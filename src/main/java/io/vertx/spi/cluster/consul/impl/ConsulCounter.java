@@ -10,7 +10,7 @@ import io.vertx.ext.consul.KeyValueOptions;
 import java.util.Objects;
 
 /**
- * Consul-based implementation of an asynchronous (distributed) counter that can be used to across the cluster to maintain a consistent count.
+ * Consul-based implementation of an asynchronous (distributed) counter that can be used across the cluster to maintain a consistent count.
  * <p>
  * <b> Given implementation is based on Check-and-Set consul operation.</b>
  * Some notes:
@@ -25,7 +25,7 @@ import java.util.Objects;
  * <p>
  * Note: given implementation doesn't require to serialize/deserialize counter related data, instead it just manipulates plain strings.
  *
- * @author Roman Levytskyi
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
 public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
 
@@ -121,7 +121,7 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   }
 
   /**
-   * Extract counter value (which is {@link Long}) out of {@link KeyValue}
+   * Extracts counter value (which is {@link Long}) out of {@link KeyValue}
    */
   private Long extractActualCounterValue(KeyValue keyValue) {
     return keyValue == null || keyValue.getValue() == null ? 0L : Long.valueOf(keyValue.getValue());

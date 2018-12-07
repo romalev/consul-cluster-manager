@@ -12,15 +12,15 @@ import java.util.Optional;
 
 /**
  * Dedicated utility to marshal objects into strings and un-marshal strings into objects.
- * Consul client doesn't support writing byte array to consul KV store - the only thing we have is put(String key, String value).
+ * Consul client doesn't support writing byte arrays to consul KV store.
  * In order to address the ability to save different types of java objects we:
- * - serialize objects and get their byte array.
- * - base64 encode this byte array - as a result we receive a string value.
- * - use this base 64 encoded string as value to put into consul kv store.
+ * - serialize objects and get their byte arrays.
+ * - base64 encode this byte arrays - as a result we receive {@link String}.
+ * - use this base 64 encoded string as "value" to put into consul kv store.
  * <p>
  * Note: consider KRYO: [https://github.com/EsotericSoftware/kryo] to replace default java serialization here.
  *
- * @author Roman Levytskyi.
+ * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  * @See {@link ConsulEntry}
  */
 class ConversationUtils {
