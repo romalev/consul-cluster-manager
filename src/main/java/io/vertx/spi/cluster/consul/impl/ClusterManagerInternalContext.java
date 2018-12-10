@@ -56,23 +56,23 @@ public final class ClusterManagerInternalContext implements AutoCloseable {
   }
 
   public String getNodeId() {
-    return Objects.requireNonNull(nodeId);
+    return nodeId;
   }
 
   public Vertx getVertx() {
-    return Objects.requireNonNull(vertx);
+    return vertx;
   }
 
   public ConsulClient getConsulClient() {
-    return Objects.requireNonNull(consulClient);
+    return consulClient;
   }
 
   public ConsulClientOptions getConsulClientOptions() {
-    return Objects.requireNonNull(consulClientOptions);
+    return consulClientOptions;
   }
 
   public String getEphemeralSessionId() {
-    return Objects.requireNonNull(ephemeralSessionId);
+    return ephemeralSessionId;
   }
 
   Watch<KeyValueList> createAndGetWatch(String name) {

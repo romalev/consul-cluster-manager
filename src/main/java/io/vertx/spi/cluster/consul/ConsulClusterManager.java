@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.vertx.core.Future.failedFuture;
@@ -50,7 +51,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   private static final String HA_INFO_MAP_NAME = "__vertx.haInfo";
   private static final String NODES_MAP_NAME = "__vertx.nodes";
   private static final String SERVICE_NAME = "vert.x-cluster-manager";
-  private static final String TCP_CHECK_INTERVAL = "10s";
+  private static final long TCP_CHECK_INTERVAL = 10_000;
 
   private final Map<String, Lock> locks = new ConcurrentHashMap<>();
   private final Map<String, Counter> counters = new ConcurrentHashMap<>();
@@ -67,10 +68,11 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * We have to lock node joining the cluster and node leaving the cluster operations
    * to stay as much as possible transactionally in sync with consul kv store.
    * Only one node joins the cluster at particular point in time. This is achieved through acquiring a lock.
-   * Given lock is held until the node (that got registered itself) receives an appropriate "NODE JOINED" event through consul watch
+   * Given lock is held until the node (that got registered itself) receives an appropriate "NODE ADDED" event through consul watch
    * about itself -> lock gets release then. Having this allow us to ensure :
    * - nodeAdded and nodeRemoved are called on the nodeListener in the same order on the same nodes with same node ids.
    * - getNodes() always return same node list when nodeAdded and nodeRemoved are called on the nodeListener.
+   * Same happens with node leaving the cluster.
    * Without locking we'd screw up an entire HA.
    *
    * Note: question was raised in consul google groups: https://groups.google.com/forum/#!topic/consul-tool/A0yJV0EKclw
@@ -237,6 +239,15 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * - Once all the steps above succeeded we start a consul watch on "__vertx.nodes" to capture all the details about nodes that are already part of the cluster.
    * - We try to clean HA_INFO map if cluster is empty (HA_INFO entries are NOT ephemeral -> they have to cleaned explicitly).
    * - We add the node (the one that called the join method) to the cluster by applying distributed locking. See {@code nodeJoiningLock} and {@code nodeLeavingLock}.
+   * (We consider the node has "successfully" joined the cluster in case:
+   * -- an appropriate entry has been placed under "__vertx.nodes" map
+   * AND
+   * -- consul watch pushed an appropriate nodeAdded event which has "successfully" been received by already mentioned node.
+   * We consider the node has "successfully" left the cluster if:
+   * -- an appropriate entry (that represents the node) has been removed from "__vertx.nodes" map
+   * AND
+   * -- consul watch pushed an appropriate nodeLeft event which has "successfully" been received by already mentioned node.
+   * )
    * <p>
    * If any of the steps above fails we perform some "clean up".
    */
@@ -322,7 +333,16 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private Future<Void> addLocalNode(JsonObject details) {
     Future<Lock> lockFuture = Future.future();
-    getLockWithTimeout(NODE_JOINING_LOCK_NAME, 5000, lockFuture.completer());
+    /*
+     * Time to fight for a "node_joining" lock should exceed @{code TCP_CHECK_INTERVAL} - this is done in purpose for the situation
+     * where node is the middle of joining the cluster successfully (new entry has been placed under __vertx.nodes map)
+     * but the node wasn't able to release "node_joining" lock (watch didn't push the nodeAdded event,
+     * or it pushed but the event was lost somewhere on the wire)
+     * In this case given node is not considered "healthy" and gets removed by consul agent automatically as well as its lock (due to having ephemeral session id being placed).
+     * This gives another node a chance to acquire "node_joining" lock.
+     */
+    long timeout = TCP_CHECK_INTERVAL + 100;
+    getLockWithTimeout(NODE_JOINING_LOCK_NAME, timeout, lockFuture.completer());
     return lockFuture.compose(aLock -> {
       nodeJoiningLock.set(aLock);
       return putPlainValue(
@@ -344,7 +364,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private Future<Void> removeLocalNode() {
     Future<Lock> lockFuture = Future.future();
-    getLockWithTimeout(NODE_LEAVING_LOCK_NAME, 5000, lockFuture.completer());
+    long timeout = TCP_CHECK_INTERVAL + 100;
+    getLockWithTimeout(NODE_LEAVING_LOCK_NAME, timeout, lockFuture.completer());
     return lockFuture.compose(aLock -> {
       nodeLeavingLock.set(aLock);
       return deleteValueByKeyPath(keyPath(appContext.getNodeId()));
@@ -385,10 +406,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     switch (event.getEventType()) {
       case WRITE: {
         boolean added = nodes.add(receivedNodeId);
-        if (added) {
-          if (log.isTraceEnabled()) {
-            log.trace("[" + appContext.getNodeId() + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
-          }
+        if (log.isTraceEnabled() && added) {
+          log.trace("[" + appContext.getNodeId() + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
         }
         if (receivedNodeId.equals(appContext.getNodeId())) {
           nodeJoiningLock.get().release();
@@ -408,12 +427,9 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       }
       case REMOVE: {
         boolean removed = nodes.remove(receivedNodeId);
-        if (removed) {
-          if (log.isTraceEnabled()) {
-            log.trace("[" + appContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has left the cluster.");
-          }
+        if (log.isTraceEnabled() && removed) {
+          log.trace("[" + appContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has left the cluster.");
         }
-
         if (receivedNodeId.equals(appContext.getNodeId())) {
           nodeLeavingLock.get().release();
         }
@@ -506,7 +522,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       .setId(checkId)
       .setTcp(nodeTcpAddress.getString("host") + ":" + nodeTcpAddress.getInteger("port"))
       .setServiceId(SERVICE_NAME)
-      .setInterval(TCP_CHECK_INTERVAL)
+      .setInterval(TimeUnit.MILLISECONDS.toSeconds(TCP_CHECK_INTERVAL) + "s")
       .setStatus(CheckStatus.PASSING);
     appContext.getConsulClient().registerCheck(checkOptions, result -> {
       if (result.failed()) {
