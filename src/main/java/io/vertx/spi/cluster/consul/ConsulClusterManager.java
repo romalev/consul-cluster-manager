@@ -39,6 +39,8 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * -- https://github.com/vert-x3/vertx-consul-client/issues/56
  * -- {@link io.vertx.core.impl.HAManager} enhancements -> sync map operations are always executed on the thread from the worker pool.
  * <p>
+ * <p>
+ * TODO: locking on node added add node removed events!
  *
  * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
@@ -119,12 +121,12 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * @param config holds configuration for consul cluster manager client.
    */
   public ConsulClusterManager(final JsonObject config) {
-    super(NODES_MAP_NAME, new ConsulMapContext());
+    super(NODES_MAP_NAME, new ClusterManagerInternalContext());
     Objects.requireNonNull(config, "Given cluster manager can't get initialized.");
-    mapContext
+    appContext
       .setConsulClientOptions(new ConsulClientOptions(config))
       .setNodeId(UUID.randomUUID().toString());
-    this.checkId = mapContext.getNodeId();
+    this.checkId = appContext.getNodeId();
     this.preferConsistency = config.containsKey("preferConsistency") ? config.getBoolean("preferConsistency") : false;
   }
 
@@ -138,13 +140,13 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
 
   @Override
   public void setVertx(Vertx vertx) {
-    mapContext.setVertx(vertx);
+    appContext.setVertx(vertx);
   }
 
   @Override
   public <K, V> void getAsyncMultiMap(String name, Handler<AsyncResult<AsyncMultiMap<K, V>>> asyncResultHandler) {
     Future<AsyncMultiMap<K, V>> futureAsyncMultiMap = Future.future();
-    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, preferConsistency, mapContext));
+    AsyncMultiMap asyncMultiMap = asyncMultiMaps.computeIfAbsent(name, key -> new ConsulAsyncMultiMap<>(name, preferConsistency, appContext));
     futureAsyncMultiMap.complete(asyncMultiMap);
     futureAsyncMultiMap.setHandler(asyncResultHandler);
   }
@@ -152,36 +154,37 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   @Override
   public <K, V> void getAsyncMap(String name, Handler<AsyncResult<AsyncMap<K, V>>> asyncResultHandler) {
     Future<AsyncMap<K, V>> futureAsyncMap = Future.future();
-    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, mapContext, this));
+    AsyncMap asyncMap = asyncMaps.computeIfAbsent(name, key -> new ConsulAsyncMap<>(name, appContext, this));
     futureAsyncMap.complete(asyncMap);
     futureAsyncMap.setHandler(asyncResultHandler);
   }
 
   @Override
   public <K, V> Map<K, V> getSyncMap(String name) {
-    return (Map<K, V>) syncMaps.computeIfAbsent(name, key -> new ConsulSyncMap<>(name, mapContext));
+    return (Map<K, V>) syncMaps.computeIfAbsent(name, key -> new ConsulSyncMap<>(name, appContext));
   }
 
   @Override
   public void getLockWithTimeout(String name, long timeout, Handler<AsyncResult<Lock>> resultHandler) {
-    mapContext.getVertx().executeBlocking(futureLock -> {
-      ConsulLock lock = new ConsulLock(name, checkId, timeout, mapContext);
-      boolean lockObtained = false;
+    appContext.getVertx().executeBlocking(futureLock -> {
+      ConsulLock lock = new ConsulLock(name, checkId, timeout, appContext);
+      boolean lockAcquired = false;
       long remaining = timeout;
       do {
         long start = System.nanoTime();
         try {
-          lockObtained = lock.tryObtain();
+          lockAcquired = lock.tryToAcquire();
         } catch (VertxException e) {
           // OK continue
         }
         remaining = remaining - MILLISECONDS.convert(System.nanoTime() - start, NANOSECONDS);
-      } while (!lockObtained && remaining > 0);
-      if (lockObtained) {
+      } while (!lockAcquired && remaining > 0);
+      if (lockAcquired) {
         locks.put(name, lock);
         futureLock.complete(lock);
       } else {
-        futureLock.fail("Timed out waiting to get lock: " + name);
+        log.warn("[" + appContext.getNodeId() + "]: timed out to get a lock on: " + name);
+        futureLock.fail("Timed out waiting to get lock on: " + name);
       }
     }, false, resultHandler);
   }
@@ -190,14 +193,14 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   public void getCounter(String name, Handler<AsyncResult<Counter>> resultHandler) {
     Objects.requireNonNull(name);
     Future<Counter> counterFuture = Future.future();
-    Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, mapContext));
+    Counter counter = counters.computeIfAbsent(name, key -> new ConsulCounter(name, appContext));
     counterFuture.complete(counter);
     counterFuture.setHandler(resultHandler);
   }
 
   @Override
   public String getNodeID() {
-    return mapContext.getNodeId();
+    return appContext.getNodeId();
   }
 
   @Override
@@ -213,7 +216,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   /**
    * For new node to join the cluster we perform:
    * <p>
-   * - We create {@link ConsulClient} instance and save it to internal {@link ConsulMapContext}
+   * - We create {@link ConsulClient} instance and save it to internal {@link ClusterManagerInternalContext}
    * <p>
    * - We register consul service in consul agent. Every new consul service and new entry within "__vertx.nodes" represent actual vertx node.
    * Note: every vetx node that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".Don't confuse vertx node with consul (native) node - these are completely different things.
@@ -231,22 +234,26 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * <li>health check falls into critical state {@link CheckStatus} - this happens when our dummy TCP server doesn't acknowledge the consul's heartbeat message).</li>
    * <li>session is explicitly destroyed.</li>
    * <p>
-   * - TODO : managing nodes.
+   * - Once all the steps above succeeded we start a consul watch on "__vertx.nodes" to capture all the details about nodes that are already part of the cluster.
+   * - We try to clean HA_INFO map if cluster is empty (HA_INFO entries are NOT ephemeral -> they have to cleaned explicitly).
+   * - We add the node (the one that called the join method) to the cluster by applying distributed locking. See {@code nodeJoiningLock} and {@code nodeLeavingLock}.
+   * <p>
+   * If any of the steps above fails we perform some "clean up".
    */
   @Override
   public synchronized void join(Handler<AsyncResult<Void>> resultHandler) {
-    log.trace(mapContext.getNodeId() + " is trying to join the cluster.");
+    log.debug(appContext.getNodeId() + " is trying to join the cluster.");
     if (!active) {
       active = true;
-      mapContext.initConsulClient();
+      appContext.initConsulClient();
       deregisterFailingTcpChecks()
         .compose(aVoid -> createTcpServer())
         .compose(aVoid -> registerService())
         .compose(aVoid -> registerTcpCheck())
         .compose(aVoid ->
-          registerSession("Session for ephemeral keys for: " + mapContext.getNodeId(), checkId)
+          registerSession("Session for ephemeral keys for: " + appContext.getNodeId(), checkId)
             .compose(s -> {
-              mapContext.setEphemeralSessionId(s);
+              appContext.setEphemeralSessionId(s);
               return succeededFuture();
             }))
         .compose(aVoid -> {
@@ -262,17 +269,17 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
             try {
               shutdownTcpServer();
               // this will trigger the remove of all ephemeral entries
-              if (Objects.nonNull(mapContext.getEphemeralSessionId()))
-                destroySession(mapContext.getEphemeralSessionId());
+              if (Objects.nonNull(appContext.getEphemeralSessionId()))
+                destroySession(appContext.getEphemeralSessionId());
               deregisterTcpCheck();
-              mapContext.close();
+              appContext.close();
             } finally {
               resultHandler.handle(failedFuture(nodeJoinedEvent.cause()));
             }
           }
         });
     } else {
-      log.warn(mapContext.getNodeId() + " is NOT active.");
+      log.warn(appContext.getNodeId() + " is NOT active.");
       resultHandler.handle(succeededFuture());
     }
   }
@@ -282,23 +289,23 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   @Override
   public synchronized void leave(Handler<AsyncResult<Void>> resultHandler) {
-    log.trace(mapContext.getNodeId() + " is trying to leave the cluster.");
+    log.debug(appContext.getNodeId() + " is trying to leave the cluster.");
     if (active) {
       active = false;
       // forcibly release all lock being held by node.
       locks.values().forEach(Lock::release);
       removeLocalNode()
-        .compose(aVoid -> destroySession(mapContext.getEphemeralSessionId()))
+        .compose(aVoid -> destroySession(appContext.getEphemeralSessionId()))
         .compose(aVoid -> deregisterTcpCheck())
         .compose(aVoid -> shutdownTcpServer())
         .compose(aVoid -> {
-          mapContext.close();
-          log.trace("[" + mapContext.getNodeId() + "] has left the cluster.");
+          appContext.close();
+          log.debug("[" + appContext.getNodeId() + "] has left the cluster.");
           return Future.<Void>succeededFuture();
         })
         .setHandler(resultHandler);
     } else {
-      log.warn(mapContext.getNodeId() + "' is NOT active.");
+      log.warn(appContext.getNodeId() + "' is NOT active.");
       resultHandler.handle(Future.succeededFuture());
     }
   }
@@ -309,7 +316,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   }
 
   /**
-   * Adds local node to the cluster (new entry gets created within {@code NODES_MAP_NAME} where key is node id).
+   * Adds local node (the one that uses this cluster manager) to the cluster (new entry gets created within {@code NODES_MAP_NAME} where key is node id).
    *
    * @param details - IP address of node.
    */
@@ -319,33 +326,33 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     return lockFuture.compose(aLock -> {
       nodeJoiningLock.set(aLock);
       return putPlainValue(
-        keyPath(mapContext.getNodeId()),
+        keyPath(appContext.getNodeId()),
         details.encode(),
-        new KeyValueOptions().setAcquireSession(mapContext.getEphemeralSessionId())
+        new KeyValueOptions().setAcquireSession(appContext.getEphemeralSessionId())
       );
     }).compose(aBoolean -> {
       if (aBoolean) return Future.succeededFuture();
       else {
         nodeJoiningLock.get().release();
-        return Future.failedFuture("Node: " + mapContext.getNodeId() + "failed to join the cluster.");
+        return Future.failedFuture("Node: " + appContext.getNodeId() + "failed to join the cluster.");
       }
     });
   }
 
   /**
-   * Removes local node from the cluster (existing entry gets removed from {@code NODES_MAP_NAME}).
+   * Removes local node (the one that uses this cluster manager) from the cluster (existing entry gets removed from {@code NODES_MAP_NAME}).
    */
   private Future<Void> removeLocalNode() {
     Future<Lock> lockFuture = Future.future();
     getLockWithTimeout(NODE_LEAVING_LOCK_NAME, 5000, lockFuture.completer());
     return lockFuture.compose(aLock -> {
       nodeLeavingLock.set(aLock);
-      return deleteValueByKeyPath(keyPath(mapContext.getNodeId()));
+      return deleteValueByKeyPath(keyPath(appContext.getNodeId()));
     }).compose(aBoolean -> {
       if (aBoolean) return Future.succeededFuture();
       else {
         nodeLeavingLock.get().release();
-        return Future.failedFuture("Node: " + mapContext.getNodeId() + "failed to leave the cluster.");
+        return Future.failedFuture("Node: " + appContext.getNodeId() + "failed to leave the cluster.");
       }
     });
   }
@@ -379,35 +386,47 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       case WRITE: {
         boolean added = nodes.add(receivedNodeId);
         if (added) {
-          log.trace("[" + mapContext.getNodeId() + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
+          if (log.isTraceEnabled()) {
+            log.trace("[" + appContext.getNodeId() + "]" + " New node: " + receivedNodeId + " has joined the cluster.");
+          }
         }
-        if (receivedNodeId.equals(mapContext.getNodeId())) {
+        if (receivedNodeId.equals(appContext.getNodeId())) {
           nodeJoiningLock.get().release();
         }
         if (nodeListener != null && active) {
-          VertxInternal vertxInternal = (VertxInternal) mapContext.getVertx();
+          VertxInternal vertxInternal = (VertxInternal) appContext.getVertx();
           vertxInternal.getOrCreateContext().executeBlocking(runOnWorkingPool -> {
             nodeListener.nodeAdded(receivedNodeId);
             runOnWorkingPool.complete();
-          }, taskQueue, res -> log.trace("[" + mapContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId));
+          }, taskQueue, res -> {
+            if (log.isTraceEnabled()) {
+              log.trace("[" + appContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has been added to nodeListener.", receivedNodeId);
+            }
+          });
         }
         break;
       }
       case REMOVE: {
         boolean removed = nodes.remove(receivedNodeId);
         if (removed) {
-          log.trace("[" + mapContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has left the cluster.");
+          if (log.isTraceEnabled()) {
+            log.trace("[" + appContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has left the cluster.");
+          }
         }
 
-        if (receivedNodeId.equals(mapContext.getNodeId())) {
+        if (receivedNodeId.equals(appContext.getNodeId())) {
           nodeLeavingLock.get().release();
         }
         if (nodeListener != null && active) {
-          VertxInternal vertxInternal = (VertxInternal) mapContext.getVertx();
+          VertxInternal vertxInternal = (VertxInternal) appContext.getVertx();
           vertxInternal.getOrCreateContext().executeBlocking(runOnWorkingPool -> {
             nodeListener.nodeLeft(receivedNodeId);
             runOnWorkingPool.complete();
-          }, taskQueue, res -> log.trace("[" + mapContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has been removed from nodeListener."));
+          }, taskQueue, res -> {
+            if (log.isTraceEnabled()) {
+              log.trace("[" + appContext.getNodeId() + "]" + " Node: " + receivedNodeId + " has been removed from nodeListener.");
+            }
+          });
         }
         break;
       }
@@ -425,7 +444,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
       log.error(e);
       future.fail(e);
     }
-    tcpServer = mapContext.getVertx().createNetServer(new NetServerOptions(nodeTcpAddress));
+    tcpServer = appContext.getVertx().createNetServer(new NetServerOptions(nodeTcpAddress));
     tcpServer.connectHandler(event -> {
     }); // node's tcp server acknowledges consul's heartbeat message.
     tcpServer.listen(listenEvent -> {
@@ -459,9 +478,9 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     serviceOptions.setTags(Collections.singletonList("vertx-clustering"));
     serviceOptions.setId(SERVICE_NAME);
 
-    mapContext.getConsulClient().registerService(serviceOptions, asyncResult -> {
+    appContext.getConsulClient().registerService(serviceOptions, asyncResult -> {
       if (asyncResult.failed()) {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register node's service.", asyncResult.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to register vert.x cluster management service.", asyncResult.cause());
         future.fail(asyncResult.cause());
       } else future.complete();
     });
@@ -483,15 +502,15 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     Future<Void> future = Future.future();
     CheckOptions checkOptions = new CheckOptions()
       .setName(checkId)
-      .setNotes("This check is dedicated to service with id: " + mapContext.getNodeId())
+      .setNotes("This check is dedicated to service with id: " + appContext.getNodeId())
       .setId(checkId)
       .setTcp(nodeTcpAddress.getString("host") + ":" + nodeTcpAddress.getInteger("port"))
       .setServiceId(SERVICE_NAME)
       .setInterval(TCP_CHECK_INTERVAL)
       .setStatus(CheckStatus.PASSING);
-    mapContext.getConsulClient().registerCheck(checkOptions, result -> {
+    appContext.getConsulClient().registerCheck(checkOptions, result -> {
       if (result.failed()) {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to register check: " + checkOptions.getId(), result.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to register check: " + checkOptions.getId(), result.cause());
         future.fail(result.cause());
       } else future.complete();
     });
@@ -505,10 +524,10 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private Future<Void> deregisterTcpCheck() {
     Future<Void> future = Future.future();
-    mapContext.getConsulClient().deregisterCheck(checkId, resultHandler -> {
+    appContext.getConsulClient().deregisterCheck(checkId, resultHandler -> {
       if (resultHandler.succeeded()) future.complete();
       else {
-        log.error("[" + mapContext.getNodeId() + "]" + " - Failed to deregister check: " + checkId, resultHandler.cause());
+        log.error("[" + appContext.getNodeId() + "]" + " - Failed to deregister check: " + checkId, resultHandler.cause());
         future.fail(resultHandler.cause());
       }
     });
@@ -520,13 +539,13 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private Future<Void> deregisterFailingTcpChecks() {
     Future<CheckList> checkListFuture = Future.future();
-    mapContext.getConsulClient().healthChecks(SERVICE_NAME, checkListFuture.completer());
+    appContext.getConsulClient().healthChecks(SERVICE_NAME, checkListFuture.completer());
     return checkListFuture.compose(checkList -> {
       List<Future> futures = new ArrayList<>();
       checkList.getList().forEach(check -> {
         if (check.getStatus() == CheckStatus.CRITICAL) {
           Future<Void> future = Future.future();
-          mapContext.getConsulClient().deregisterCheck(check.getId(), future.completer());
+          appContext.getConsulClient().deregisterCheck(check.getId(), future.completer());
           futures.add(future);
         }
       });

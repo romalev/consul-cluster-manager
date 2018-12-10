@@ -32,8 +32,8 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
   // key to access counter.
   private final String consulKey;
 
-  public ConsulCounter(String name, ConsulMapContext context) {
-    super("__vertx.counters", context);
+  public ConsulCounter(String name, ClusterManagerInternalContext appContext) {
+    super("__vertx.counters", appContext);
     this.consulKey = keyPath(name);
   }
 

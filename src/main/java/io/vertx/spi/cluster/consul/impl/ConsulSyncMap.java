@@ -19,10 +19,10 @@ import static io.vertx.core.Future.succeededFuture;
  */
 public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K, V> {
 
-  private long timeout = 30_000;
+  private long timeout = 20_000;
 
-  public ConsulSyncMap(String name, ConsulMapContext cmContext) {
-    super(name, cmContext);
+  public ConsulSyncMap(String name, ClusterManagerInternalContext appContext) {
+    super(name, appContext);
   }
 
   @Override
@@ -54,7 +54,8 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
   public V put(K key, V value) {
     return completeAndGet(putValue(key, value).compose(aBoolean -> {
       if (aBoolean) return succeededFuture(value);
-      else return Future.failedFuture("[" + mapContext.getNodeId() + "]" + " failed to put KV: " + key + " -> " + value);
+      else
+        return Future.failedFuture("[" + appContext.getNodeId() + "]" + " failed to put KV: " + key + " -> " + value);
     }), timeout);
   }
 
@@ -65,7 +66,8 @@ public final class ConsulSyncMap<K, V> extends ConsulMap<K, V> implements Map<K,
       else return deleteValue((K) key).compose(aBoolean -> {
         if (aBoolean) {
           return succeededFuture(v);
-        } else return Future.failedFuture("[" + mapContext.getNodeId() + "]" + " failed to remove an entry by K: " + key);
+        } else
+          return Future.failedFuture("[" + appContext.getNodeId() + "]" + " failed to remove an entry by K: " + key);
       });
     }), timeout);
   }
