@@ -45,7 +45,7 @@ repositories {
     maven { url 'https://jitpack.io' }
 }
 
-compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.5-beta'
+compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.6-beta'
 ```
 
 ### Maven
@@ -63,7 +63,7 @@ compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.5-beta'
 <dependency>
   <groupId>com.github.romalev</groupId>
   <artifactId>vertx-consul-cluster-manager</artifactId>
-  <version>v0.0.5-beta</version>
+  <version>v0.0.6-beta</version>
 </dependency>
 ```
 
