@@ -124,6 +124,6 @@ public class ConsulCounter extends ConsulMap<String, Long> implements Counter {
    * Extracts counter value (which is {@link Long}) out of {@link KeyValue}
    */
   private Long extractActualCounterValue(KeyValue keyValue) {
-    return keyValue == null || keyValue.getValue() == null ? 0L : Long.valueOf(keyValue.getValue());
+    return keyValue == null || keyValue.getValue() == null ? Long.valueOf(0L) : Long.valueOf(keyValue.getValue());
   }
 }
