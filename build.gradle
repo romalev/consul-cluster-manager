@@ -4,14 +4,12 @@ version '1.0-SNAPSHOT'
 apply plugin: 'java'
 apply plugin: 'idea'
 apply plugin: 'findbugs'
-apply plugin: 'jacoco'
 
 sourceCompatibility = 1.8
 
 repositories {
   mavenCentral()
   maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
-  maven { url 'https://jitpack.io' }
 }
 
 ext {
@@ -24,15 +22,6 @@ ext {
 findbugs {
   ignoreFailures = true
 }
-
-jacocoTestReport {
-  reports {
-    xml.enabled true
-    html.enabled false
-  }
-}
-
-check.dependsOn jacocoTestReport
 
 dependencies {
   testCompile group: 'junit', name: 'junit', version: junitVersion
