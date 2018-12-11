@@ -40,8 +40,6 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  * -- https://github.com/vert-x3/vertx-consul-client/issues/56
  * -- {@link io.vertx.core.impl.HAManager} enhancements -> sync map operations are always executed on the thread from the worker pool.
  * <p>
- * <p>
- * TODO: locking on node added add node removed events!
  *
  * @author <a href="mailto:roman.levytskyi.oss@gmail.com">Roman Levytskyi</a>
  */
