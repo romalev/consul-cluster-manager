@@ -20,11 +20,12 @@ import static org.junit.Assert.*;
  */
 public class ConsulSyncMapTest {
 
-  private ClusterManagerInternalContext cmContext = new ClusterManagerInternalContext();
-  private static int port;
+  private ClusterManagerInternalContext cmContext;
+  private int port;
 
   @Before
   public void setUp() {
+    cmContext = new ClusterManagerInternalContext();
     port = ConsulCluster.init();
     ConsulClientOptions options = new ConsulClientOptions()
       .setPort(port)
