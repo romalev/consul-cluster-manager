@@ -218,13 +218,12 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    * <p>
    * - We create {@link ConsulClient} instance and save it to internal {@link ClusterManagerInternalContext}
    * <p>
-   * - We register consul service in consul agent. Every new consul service and new entry within "__vertx.nodes" represent actual vertx node.
-   * Note: every vetx node that joins the cluster IS tagged with NODE_COMMON_TAG = "vertx-clustering".Don't confuse vertx node with consul (native) node - these are completely different things.
+   * - We register consul vert.x cluster management service in consul agent. Note: only one CM service gets created.
    * <p>
    * - We create dummy TCP server to able to receive and acknowledge heart beats messages from consul.
    * <p>
    * - We create TCP check (and get it registered within consul agent) to let consul agent sends heart beats messages to previously mentioned tcp server.
-   * This allow consul agent to be aware of what is going on within the cluster: node is active if it acknowledges hear beat message, inactive - otherwise.
+   * This allows consul agent to be aware of what is going on within the cluster: node is active if it acknowledges hear beat message, inactive - otherwise.
    * {@code TCP_CHECK_INTERVAL} holds actual interval for which consul agent will be sending heart beat messages to vert.x nodes.
    * <p>
    * - We create session in consul agent. Session's id is used later on to make consul map entries ephemeral (every entry that gets created with special {@link KeyValueOptions} holding this session id gets automatically deleted
