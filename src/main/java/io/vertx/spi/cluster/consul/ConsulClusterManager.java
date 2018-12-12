@@ -332,7 +332,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     Future<Lock> lockFuture = Future.future();
     /*
      * Time to fight for a "node_joining" lock should exceed @{code TCP_CHECK_INTERVAL} - this is done in purpose for the situation
-     * where node is the middle of joining the cluster successfully (new entry has been placed under __vertx.nodes map)
+     * where node is the middle of joining the cluster (new entry has been placed under __vertx.nodes map)
      * but the node wasn't able to release "node_joining" lock (watch didn't push the nodeAdded event,
      * or it pushed but the event was lost somewhere on the wire)
      * In this case given node is not considered "healthy" and gets removed by consul agent automatically as well as its lock (due to having ephemeral session id being placed).
