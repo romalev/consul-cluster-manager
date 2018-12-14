@@ -63,11 +63,11 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private final Set<String> nodes = new HashSet<>();
   /*
-   * We have to lock node joining the cluster and node leaving the cluster operations
+   * We have to lock the "node joining the cluster" and "node leaving the cluster" operations
    * to stay as much as possible transactionally in sync with consul kv store.
-   * Only one node joins the cluster at particular point in time. This is achieved through acquiring a lock.
-   * Given lock is held until the node (that got registered itself) receives an appropriate "NODE ADDED" event through consul watch
-   * about itself -> lock gets release then. Having this allow us to ensure :
+   * Only one node joins the cluster at particular point in time. This is achieved through acquiring a distributed lock.
+   * Given lock is held until the node itself receives an appropriate "NODE JOINED" or ("NODE_LEFT") event through consul watch.
+   * Having this allow us to ensure :
    * - nodeAdded and nodeRemoved are called on the nodeListener in the same order on the same nodes with same node ids.
    * - getNodes() always return same node list when nodeAdded and nodeRemoved are called on the nodeListener.
    * Same happens with node leaving the cluster.
@@ -347,8 +347,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
         details.encode(),
         new KeyValueOptions().setAcquireSession(appContext.getEphemeralSessionId())
       );
-    }).compose(aBoolean -> {
-      if (aBoolean) return Future.succeededFuture();
+    }).compose(nodeAdded -> {
+      if (nodeAdded) return Future.succeededFuture();
       else {
         nodeJoiningLock.get().release();
         return Future.failedFuture("Node: " + appContext.getNodeId() + "failed to join the cluster.");
@@ -366,8 +366,8 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
     return lockFuture.compose(aLock -> {
       nodeLeavingLock.set(aLock);
       return deleteValueByKeyPath(keyPath(appContext.getNodeId()));
-    }).compose(aBoolean -> {
-      if (aBoolean) return Future.succeededFuture();
+    }).compose(nodeRemoved -> {
+      if (nodeRemoved) return Future.succeededFuture();
       else {
         nodeLeavingLock.get().release();
         return Future.failedFuture("Node: " + appContext.getNodeId() + "failed to leave the cluster.");
