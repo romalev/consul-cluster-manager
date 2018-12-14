@@ -6,6 +6,8 @@ import io.vertx.core.eventbus.ConsulApClusteredEventBusTest;
 import io.vertx.core.eventbus.ConsulCpClusteredEventBusTest;
 import io.vertx.core.shareddata.*;
 import io.vertx.ext.web.sstore.ConsulClusteredSessionHandlerTest;
+import io.vertx.spi.cluster.consul.impl.ConsulNodeWithDefaultHostNameTest;
+import io.vertx.spi.cluster.consul.impl.ConsulNodeWithSpecifiedHostNameTest;
 import io.vertx.spi.cluster.consul.impl.ConsulSyncMapTest;
 import io.vertx.spi.cluster.consul.impl.ConsumerRoundRobinTest;
 import org.junit.runner.RunWith;
@@ -46,7 +48,10 @@ import org.junit.runners.Suite;
   // EVENT BUS
   ConsulCpClusteredEventBusTest.class,
   ConsulApClusteredEventBusTest.class,
-  ConsulClusteredSessionHandlerTest.class
+  ConsulClusteredSessionHandlerTest.class,
+  // HOST
+  ConsulNodeWithDefaultHostNameTest.class,
+  ConsulNodeWithSpecifiedHostNameTest.class
 })
 public class ConsulClusterManagerTestSuite {
 }
