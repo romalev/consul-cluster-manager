@@ -56,6 +56,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
   private final Map<String, Map<?, ?>> syncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMap<?, ?>> asyncMaps = new ConcurrentHashMap<>();
   private final Map<String, AsyncMultiMap<?, ?>> asyncMultiMaps = new ConcurrentHashMap<>();
+  private final JsonObject consulClusterManagerConfig;
 
   /*
    * A set that attempts to keep all cluster node's data locally cached. Cluster manager
@@ -122,6 +123,7 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   public ConsulClusterManager(final JsonObject config) {
     super(NODES_MAP_NAME, new ClusterManagerInternalContext());
+    this.consulClusterManagerConfig = config;
     Objects.requireNonNull(config, "Given cluster manager can't get initialized.");
     appContext
       .setConsulClientOptions(new ConsulClientOptions(config))
@@ -451,12 +453,23 @@ public class ConsulClusterManager extends ConsulMap<String, String> implements C
    */
   private Future<Void> createTcpServer() {
     Future<Void> future = Future.future();
-    try {
-      nodeTcpAddress.put("host", InetAddress.getLocalHost().getHostAddress());
-    } catch (UnknownHostException e) {
-      log.error(e);
-      future.fail(e);
+    /*
+     * Figuring out the node's host address (host ip address) is always tricky especially in case
+     * multiple network interfaces present on the host this cluster manager operates on.
+     * @See https://github.com/romalev/vertx-consul-cluster-manager/issues/92.
+     */
+    String hostAddress = consulClusterManagerConfig.getString("nodeHost");
+    if (Objects.nonNull(hostAddress) && !hostAddress.isEmpty()) {
+      nodeTcpAddress.put("host", hostAddress);
+    } else {
+      try {
+        nodeTcpAddress.put("host", InetAddress.getLocalHost().getHostAddress());
+      } catch (UnknownHostException e) {
+        log.error(e);
+        future.fail(e);
+      }
     }
+
     tcpServer = appContext.getVertx().createNetServer(new NetServerOptions(nodeTcpAddress));
     tcpServer.connectHandler(event -> {
     }); // node's tcp server acknowledges consul's heartbeat message.

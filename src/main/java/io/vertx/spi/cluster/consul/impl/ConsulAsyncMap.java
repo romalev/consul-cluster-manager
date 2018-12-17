@@ -276,7 +276,6 @@ public class ConsulAsyncMap<K, V> extends ConsulMap<K, V> implements AsyncMap<K,
      */
     Future<Void> apply(String keyPath, Optional<Long> ttl) {
       Future<Void> future = Future.future();
-      cancelTimer(keyPath);
       if (ttl.isPresent()) {
         if (log.isDebugEnabled()) {
           log.debug("[" + nodeId + "] : " + "applying ttl monitoring on: " + keyPath + " with ttl: " + ttl.get());
