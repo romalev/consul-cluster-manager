@@ -66,23 +66,34 @@ compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.7-beta'
   <version>v0.0.7-beta</version>
 </dependency>
 ```
-
-```
-// 1. Create an instance of ConsulClusterManager. ConsulClusterManager strictly relies on vertx-consul-client (https://vertx.io/docs/vertx-consul-client/java/) 
+There's more than one way to created an instance of consul cluster manager. 
+- Defaut one: 
+``` ConsulClusterManager consulClusterManager = new ConsulClusterManager(); // Consul agent should be running then on localhost:8500.  ```
+- Excplicilty specifying configuration: 
+``` 
 JsonObject options = new JsonObject()
- // host where consul agent is running, if not specified default host will be used which is "localhost"
- .put("host", "localhost") 
- // port on wich consul agent is listening, if not specified default port will be used which is "8500"
- .put("port", consulAgentPort) 
- // * false - enable internal caching of event bus subscribers - this will give us better latency but stale reads (stale subsribers) might appear.
- // * true - disable internal caching of event bus subscribers - this will give us stronger consistency in terms of fetching event bus subscribers, 
- // but this will result in having much more round trips to consul kv store where event bus subs are being kept.
- .put("preferConsistency", true);   
+.put("host", "localhost") // host on which consul agent is running, if not specified default host will be used which is "localhost".
+.put("port", consulAgentPort) // port on wich consul agent is runing, if not specified default port will be used which is "8500".
+/*
+ * There's an option to utilize built-in internal caching. 
+ * @{Code false} - enable internal caching of event bus subscribers - this will give us better latency but stale reads (stale subsribers) might appear.  
+ * @{Code true} - disable internal caching of event bus subscribers - this will give us stronger consistency in terms of fetching event bus subscribers, 
+ * but this will result in having much more round trips to consul kv store where event bus subs are being kept.
+ */
+.put("preferConsistency", false)
+/*
+ * There's also an option to specify explictly host address on which given cluster manager will be operating on. 
+ * By defult InetAddress.getLocalHost().getHostAddress() will be executed.
+ * Linux systems enumerate the loopback network interface the same way as regular LAN network interfaces, but the JDK       
+ * InetAddress.getLocalHost method does not specify the algorithm used to select the address returned under such circumstances, and will 
+ * often return the loopback address, which is not valid for network communication.
+ */
+ .put("nodeHost", "10.0.0.1");
+ // consul client options can be additionally specified as needed.
 ConsulClusterManager consulClusterManager = new ConsulClusterManager(options);
-// or use defaults: 
-// ConsulClusterManager consulClusterManager = new ConsulClusterManager();
-
-// 2. Create VertxOptions instance and specify consul cluster manager.
+ ```
+- Once cluster manager instance is created we can easily create clustered vertx. Voilà! 
+```
 VertxOptions vertxOptions = new VertxOptions();
 vertxOptions.setClusterManager(consulClusterManager);
 Vertx.clusteredVertx(vertxOptions, res -> {
@@ -97,5 +108,5 @@ Vertx.clusteredVertx(vertxOptions, res -> {
 
 **Restrictions**
 -
-- Compatible with **ONLY Vert.x 3.6.+** release.
+- Compliant with **ONLY Vert.x 3.6.0+** release.
 - The limit on a key's value size of any of the consul  maps is 512KB.
