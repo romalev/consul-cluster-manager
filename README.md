@@ -45,7 +45,7 @@ repositories {
     maven { url 'https://jitpack.io' }
 }
 
-compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.7-beta'
+compile 'com.github.romalev:vertx-consul-cluster-manager:v1.0'
 ```
 
 ### Maven
@@ -63,7 +63,7 @@ compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.7-beta'
 <dependency>
   <groupId>com.github.romalev</groupId>
   <artifactId>vertx-consul-cluster-manager</artifactId>
-  <version>v0.0.7-beta</version>
+  <version>v1.0</version>
 </dependency>
 ```
 There's more than one way to created an instance of consul cluster manager. 
