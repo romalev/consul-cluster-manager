@@ -68,6 +68,7 @@ compile 'com.github.romalev:vertx-consul-cluster-manager:v0.0.7-beta'
 ```
 There's more than one way to created an instance of consul cluster manager. 
 - Defaut one: 
+
 ``` ConsulClusterManager consulClusterManager = new ConsulClusterManager(); // Consul agent should be running then on localhost:8500.  ```
 - Excplicilty specifying configuration: 
 ``` 
