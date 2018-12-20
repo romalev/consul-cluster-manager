@@ -4,11 +4,7 @@
 
 **Introduction**
 -
-Consul - based cluster manager that is plugable into Vert.x ecosystem. **[Consul](https://www.consul.io/)** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure. 
-
-**Project status**
--
-Project is still being under POC. Vert.x core TCK is passing. Your feedback would be greatly appreciated.
+Consul - based cluster manager that is plugable into Vert.x ecosystem. **[Consul](https://www.consul.io/)** is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure.
 
 **Motivation**
 - 
@@ -66,7 +62,7 @@ compile 'com.github.romalev:vertx-consul-cluster-manager:v1.0'
   <version>v1.0</version>
 </dependency>
 ```
-There's more than one way to created an instance of consul cluster manager. 
+There's more than one way to create an instance of consul cluster manager. 
 - Defaut one: 
 
 ``` ConsulClusterManager consulClusterManager = new ConsulClusterManager(); // Consul agent should be running then on localhost:8500.  ```
