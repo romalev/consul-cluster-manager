@@ -13,8 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-group 'io.vertx'
-version '1.2.0'
+group 'io.reactiverse'
+version '3.6.2'
 
 apply plugin: 'java'
 apply plugin: 'idea'
